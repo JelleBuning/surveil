@@ -1,0 +1,6 @@
+namespace Surveil.Infrastructure.WebSocket;
+
+internal interface IWebSocketFactory
+{
+    IWebSocketConnection Create(string apiKey);
+}

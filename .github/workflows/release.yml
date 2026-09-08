@@ -36,7 +36,7 @@ jobs:
       - name: Update Package.appxmanifest version
         shell: pwsh
         run: |
-          $manifest = "src\UnifiProtectClient\Package.appxmanifest"
+          $manifest = "src\Surveil\Package.appxmanifest"
           $version = "${{ steps.version.outputs.VERSION }}"
           (Get-Content $manifest -Raw) -replace 'Version="\d+\.\d+\.\d+\.\d+"', "Version=`"$version`"" |
             Set-Content $manifest -NoNewline
@@ -50,7 +50,7 @@ jobs:
       - name: Build and Package MSIX
         shell: pwsh
         run: |
-          dotnet publish src\UnifiProtectClient\UnifiProtectClient.csproj `
+          dotnet publish src\Surveil\Surveil.csproj `
             -c Release `
             -r ${{ matrix.rid }} `
             -p:Platform=${{ matrix.platform }} `

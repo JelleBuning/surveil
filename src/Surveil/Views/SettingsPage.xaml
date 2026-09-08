@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Surveil.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel HorizontalAlignment="Left"
+                    Padding="32,24"
+                    Spacing="20"
+                    Width="600">
+
+            <!-- Page header -->
+            <TextBlock Text="Settings"
+                       Style="{StaticResource TitleTextBlockStyle}" />
+
+            <!-- Provider selector -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Video Provider"
+                           Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock Text="Choose which system provides your camera feeds."
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap" />
+                <ComboBox Margin="0,8,0,0"
+                          Header="Provider"
+                          ItemsSource="{Binding AvailableProviders}"
+                          SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
+                          DisplayMemberPath="DisplayName"
+                          HorizontalAlignment="Stretch"/>
+            </StackPanel>
+
+            <!-- UniFi Protect settings -->
+            <StackPanel Visibility="{Binding UnifiProviderVisibility}"
+                        Spacing="12">
+
+                <TextBlock Text="UniFi Protect Connection"
+                           Style="{StaticResource SubtitleTextBlockStyle}" />
+
+                <TextBox Header="Base URL"
+                         PlaceholderText="https://192.168.0.1"
+                         Text="{Binding BaseUrl, Mode=TwoWay}"
+                         HorizontalAlignment="Stretch" />
+
+                <TextBox Header="API Key"
+                         PlaceholderText="Your UniFi Protect API key"
+                         Text="{Binding ApiKey, Mode=TwoWay}"
+                         HorizontalAlignment="Stretch" />
+
+                <TextBox Header="Snapshot Path (optional)"
+                         PlaceholderText="Leave empty to use the default path"
+                         Text="{Binding SnapshotPath, Mode=TwoWay}"
+                         HorizontalAlignment="Stretch" />
+            </StackPanel>
+
+            <!-- Save button -->
+            <Button Content="Save Settings"
+                    Command="{Binding SaveCommand}"
+                    Style="{StaticResource AccentButtonStyle}" />
+
+            <!-- Feedback: success -->
+            <InfoBar IsOpen="{Binding ShowSuccess, Mode=TwoWay}"
+                     Severity="Success"
+                     Title="Settings saved"
+                     Message=""
+                     IsClosable="True" />
+
+            <!-- Feedback: validation error -->
+            <InfoBar IsOpen="{Binding ShowError, Mode=TwoWay}"
+                     Severity="Error"
+                     Title="Validation error"
+                     Message="{Binding ErrorMessage}"
+                     IsClosable="True" />
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

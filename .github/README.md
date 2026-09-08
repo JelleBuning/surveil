@@ -7,7 +7,7 @@
 [![GNU Affero General Public License v3.0 License][license-shield]][license-url]
 
 <div align="center">
-  <h3 align="center">Unifi Protect Windows Client</h3>
+  <h3 align="center">Surveil</h3>
   <p align="center">
     A lightweight Windows desktop application to receive real-time doorbell notifications and view camera feeds from your Unifi Protect deployment.
     <br />
@@ -56,7 +56,7 @@ Many Unifi Protect users find it difficult to keep track of doorbell activity wh
 
 ## Getting Started
 
-Setting up the Unifi Protect Client on your machine is straightforward.
+Setting up Surveil on your machine is straightforward.
 
 ### Installation
 
