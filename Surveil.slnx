@@ -1,0 +1,21 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/Surveil.Core/Surveil.Core.csproj">
+      <Platform Solution="Release|x64" Project="x64" />
+    </Project>
+    <Project Path="src/Surveil/Surveil.csproj">
+      <Platform Solution="*|ARM64" Project="ARM64" />
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+      <Deploy />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Surveil.Core.Tests/Surveil.Core.Tests.csproj" />
+  </Folder>
+</Solution>
