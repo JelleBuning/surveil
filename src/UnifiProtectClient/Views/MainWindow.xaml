@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Window
-    Title=""
+    Title="Protect View"
     x:Class="UnifiProtectClient.Views.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -9,35 +9,47 @@
     xmlns:notifyIcon="using:H.NotifyIcon"
     mc:Ignorable="d">
 
-    <Grid x:Name="RootGrid" Background="Black">
-        <Image x:Name="VideoImage"
-               HorizontalAlignment="Stretch"
-               VerticalAlignment="Stretch"
-               Stretch="UniformToFill"
-               Source="{Binding VideoSource}" />
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="Base" />
+    </Window.SystemBackdrop>
 
-        <Border x:Name="TitleBarBackground"
-                VerticalAlignment="Top"
-                HorizontalAlignment="Stretch"
-                Background="#E1000000"
-                Height="32" />
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="0"/>
+        </Grid.RowDefinitions>
 
-        <Border HorizontalAlignment="Left"
-                VerticalAlignment="Bottom"
-                Margin="8"
-                Padding="6,3"
-                Background="#99000000"
-                CornerRadius="4">
-            <TextBlock Text="{Binding StatusMessage}"
-                       Foreground="White"
-                       FontSize="12" />
-        </Border>
+        <TitleBar x:Name="AppTitleBar"
+                  Grid.Row="0"
+                  Title="Protect View" />
+
+        <NavigationView
+            x:Name="NavView"
+            Grid.Row="1"
+            PaneDisplayMode="Left"
+            IsPaneToggleButtonVisible="False"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            OpenPaneLength="200"
+            AlwaysShowHeader="False"
+            SelectionChanged="NavView_SelectionChanged">
+
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="CamerasGroup"
+                                    Content="Cameras"
+                                    ToolTipService.ToolTip="Cameras"/>
+            </NavigationView.MenuItems>
+
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
 
         <notifyIcon:TaskbarIcon
             x:Name="TaskBarIcon"
-            ToolTipText="Unifi Protect Client" 
-            IconSource="/Assets/tray-icon.ico" 
-            LeftClickCommand="{Binding LeftClickCommand}" 
+            Grid.Row="2"
+            ToolTipText="Unifi Protect Camera Client"
+            IconSource="/Assets/tray-icon.ico"
+            LeftClickCommand="{Binding LeftClickCommand}"
             x:FieldModifier="public" />
     </Grid>
 </Window>

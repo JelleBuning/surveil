@@ -10,16 +10,11 @@ using UnifiProtectClient.Infrastructure.Http;
 namespace UnifiProtectClient.Core.Tests.Infrastructure;
 
 /// <summary>Configurable stub for HttpMessageHandler.</summary>
-internal sealed class StubHttpHandler : HttpMessageHandler
+internal sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
 {
-    private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
-
-    public StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) =>
-        _handler = handler;
-
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken) =>
-        Task.FromResult(_handler(request));
+        Task.FromResult(handler(request));
 
     public static StubHttpHandler Returning(HttpStatusCode status, string json) =>
         new(_ => new HttpResponseMessage(status)

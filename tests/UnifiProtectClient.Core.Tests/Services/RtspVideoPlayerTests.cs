@@ -31,17 +31,14 @@ internal sealed class TestVlcHandle : IVlcPlayerHandle
     public void RaiseFrameReady(VideoFrame frame) => FrameReady?.Invoke(this, frame);
 }
 
-internal sealed class TestVlcFactory : IVlcPlayerFactory
+internal sealed class TestVlcFactory(TestVlcHandle handle) : IVlcPlayerFactory
 {
-    private readonly TestVlcHandle _handle;
     public Action<string>? CapturedOnError { get; private set; }
-
-    public TestVlcFactory(TestVlcHandle handle) => _handle = handle;
 
     public IVlcPlayerHandle Create(string url, Action<string> onError)
     {
         CapturedOnError = onError;
-        return _handle;
+        return handle;
     }
 }
 

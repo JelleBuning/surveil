@@ -1,17 +1,21 @@
 using CommunityToolkit.Mvvm.DependencyInjection;
 using H.NotifyIcon;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 using System;
+using System.Collections.Generic;
 using UnifiProtectClient.Application.Options;
 using UnifiProtectClient.Application.Ports;
 using UnifiProtectClient.Infrastructure.Http;
+using UnifiProtectClient.Infrastructure.Settings;
 using UnifiProtectClient.Infrastructure.WebSocket;
 using UnifiProtectClient.Services;
 using UnifiProtectClient.Services.Interfaces;
+using UnifiProtectClient.ViewModels;
 using UnifiProtectClient.Views;
 
 namespace UnifiProtectClient;
@@ -41,12 +45,29 @@ public partial class App
                 ContentRootPath = AppContext.BaseDirectory
             });
 
+            // Load persisted settings and let them override appsettings.json values
+            var settingsRepo = new JsonAppSettingsRepository();
+            var appSettings  = await settingsRepo.LoadAsync();
+
+            if (!string.IsNullOrEmpty(appSettings.UnifiProtect.BaseUrl))
+            {
+                builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [$"{UnifiProtectOptions.SectionName}:BaseUrl"]      = appSettings.UnifiProtect.BaseUrl,
+                    [$"{UnifiProtectOptions.SectionName}:ApiKey"]       = appSettings.UnifiProtect.ApiKey,
+                    [$"{UnifiProtectOptions.SectionName}:SnapshotPath"] = appSettings.UnifiProtect.SnapshotPath,
+                });
+            }
+
             builder.Services.Configure<UnifiProtectOptions>(builder.Configuration.GetSection(UnifiProtectOptions.SectionName));
             builder.Services.Configure<EventNotificationSettings>(builder.Configuration.GetSection(EventNotificationSettings.SectionName));
+
+            builder.Services.AddSingleton<IAppSettingsRepository>(_ => settingsRepo);
 
             builder.Services.AddSingleton<IUnifiProtectApiClient, UnifiProtectApiClient>();
             builder.Services.AddSingleton<IProtectEventStream, ProtectEventStream>();
             builder.Services.AddTransient<IDesktopNotifier, DesktopNotifier>();
+            builder.Services.AddTransient<SettingsViewModel>();
 
             builder.Services.AddSingleton<MainWindow>();
 

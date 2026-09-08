@@ -5,7 +5,9 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/src/">
-    <Project Path="src/UnifiProtectClient.Core/UnifiProtectClient.Core.csproj" />
+    <Project Path="src/UnifiProtectClient.Core/UnifiProtectClient.Core.csproj">
+      <Platform Solution="Release|x64" Project="x64" />
+    </Project>
     <Project Path="src/UnifiProtectClient/UnifiProtectClient.csproj">
       <Platform Solution="*|ARM64" Project="ARM64" />
       <Platform Solution="*|x64" Project="x64" />

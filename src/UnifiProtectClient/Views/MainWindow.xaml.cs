@@ -1,11 +1,14 @@
 using H.NotifyIcon;
 using Microsoft.Extensions.Options;
-using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
+using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using UnifiProtectClient.Application.Options;
 using UnifiProtectClient.Application.Ports;
+using UnifiProtectClient.Domain.Cameras;
 using UnifiProtectClient.Services.Interfaces;
 using UnifiProtectClient.ViewModels;
 using Windows.Graphics;
@@ -16,8 +19,8 @@ namespace UnifiProtectClient.Views;
 
 public sealed partial class MainWindow
 {
-    private const int WindowWidth = 565;
-    private const int WindowHeight = 755;
+    private const int WindowWidth = 1350;
+    private const int WindowHeight = 800;
 
     public MainViewModel ViewModel { get; }
 
@@ -25,41 +28,67 @@ public sealed partial class MainWindow
         IUnifiProtectApiClient apiClient,
         IProtectEventStream eventStream,
         IDesktopNotifier notifier,
-        IOptions<UnifiProtectOptions> options,
         IOptions<EventNotificationSettings> eventSettings)
     {
         InitializeComponent();
-        ResizeAndPosition();
+
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+
+        ResizeAndCenter();
 
         ViewModel = new MainViewModel(
             this,
             apiClient,
             eventStream,
             notifier,
-            options,
             eventSettings.Value,
             DispatcherQueue.GetForCurrentThread());
         RootGrid.DataContext = ViewModel;
 
+        ViewModel.Cameras.CollectionChanged += OnCamerasChanged;
+
         Closed += OnWindowClosed;
+    }
+
+    private void OnCamerasChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action != NotifyCollectionChangedAction.Add) return;
+
+        foreach (Camera camera in e.NewItems!)
+        {
+            var item = new NavigationViewItem
+            {
+                Content = camera.Name,
+                Tag     = camera
+            };
+            ToolTipService.SetToolTip(item, camera.Name);
+            CamerasGroup.MenuItems.Add(item);
+        }
+    }
+
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        if (args.IsSettingsSelected)
+        {
+            ContentFrame.Navigate(typeof(SettingsPage), null, new SuppressNavigationTransitionInfo());
+            return;
+        }
+
+        if (args.SelectedItem is not NavigationViewItem { Tag: Camera camera }) return;
+
+        ViewModel.SelectedCamera = camera;
+        ContentFrame.Navigate(typeof(CameraView), camera, new SuppressNavigationTransitionInfo());
     }
 
     public void BringToFront()
     {
         var hwnd = WindowNative.GetWindowHandle(this);
-        ShowWindow(hwnd, SW_RESTORE);
+        ShowWindow(hwnd, 9);
         SetForegroundWindow(hwnd);
     }
 
     public void ShowFromBackground() => DispatcherQueue.TryEnqueue(BringToFront);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(nint hWnd);
-
-    private const int SW_RESTORE = 9;
 
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
@@ -67,20 +96,19 @@ public sealed partial class MainWindow
         this.Hide();
     }
 
-    private void ResizeAndPosition()
+    private void ResizeAndCenter()
     {
         var appWindow = AppWindow.GetFromWindowId(AppWindow.Id);
-        var displayArea = DisplayArea.Primary;
-        var x = (displayArea.OuterBounds.Width - WindowWidth) / 2;
-        var y = (displayArea.OuterBounds.Height - WindowHeight) / 2;
+        var display  = DisplayArea.Primary;
+        var x = (display.OuterBounds.Width  - WindowWidth)  / 2;
+        var y = (display.OuterBounds.Height - WindowHeight) / 2;
         appWindow.MoveAndResize(new RectInt32(x, y, WindowWidth, WindowHeight));
-        appWindow.TitleBar.ExtendsContentIntoTitleBar = true;
         appWindow.TitleBar.IconShowOptions = IconShowOptions.HideIconAndSystemMenu;
-        appWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
-        appWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
-        appWindow.TitleBar.ButtonForegroundColor = Colors.White;
-        appWindow.TitleBar.ButtonInactiveForegroundColor = Colors.Gray;
-        appWindow.TitleBar.ButtonHoverBackgroundColor = new Windows.UI.Color { A = 40, R = 255, G = 255, B = 255 };
-        TitleBarBackground.Height = appWindow.TitleBar.Height;
     }
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(nint hWnd);
 }
