@@ -19,6 +19,7 @@ namespace UnifiProtectClient.ViewModels;
 public sealed class CameraViewModel : ObservableObject, IDisposable
 {
     private readonly IUnifiProtectApiClient _apiClient;
+    private readonly UnifiProtectOptions _options;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly SnapshotService _snapshotService;
     private readonly CancellationTokenSource _cts = new();
@@ -46,6 +47,7 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
         DispatcherQueue dispatcherQueue)
     {
         _apiClient = apiClient;
+        _options = options.Value;
         _dispatcherQueue = dispatcherQueue;
 
         var snapshotPath = options.Value.SnapshotPath
@@ -72,6 +74,15 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
                 .Replace(":7441/", ":7447/")
                 .Replace("?enableSrtp", "")
                 .TrimEnd('?');
+
+            // If RTSP host differs from the reachable BaseUrl host — use the latter instead.
+            var configuredHost = new Uri(_options.BaseUrl).Host;
+            var streamUri = new Uri(url);
+            if (!string.Equals(streamUri.Host, configuredHost, StringComparison.OrdinalIgnoreCase))
+            {
+                var builder = new UriBuilder(streamUri) { Host = configuredHost };
+                url = builder.Uri.ToString();
+            }
 
             _player = new RtspVideoPlayer(url);
             _player.FrameReady    += OnFrameReady;
