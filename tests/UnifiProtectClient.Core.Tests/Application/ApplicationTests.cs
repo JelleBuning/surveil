@@ -18,11 +18,11 @@ public sealed class UnifiProtectOptionsTests
     {
         var opts = new UnifiProtectOptions
         {
-            BaseUrl = "https://192.168.1.1/proxy/protect/api",
+            BaseUrl = "https://192.168.0.1/proxy/protect/api",
             ApiKey = "my-api-key"
         };
 
-        Assert.AreEqual("https://192.168.1.1/proxy/protect/api", opts.BaseUrl);
+        Assert.AreEqual("https://192.168.0.1/proxy/protect/api", opts.BaseUrl);
         Assert.AreEqual("my-api-key", opts.ApiKey);
     }
 }

@@ -5,7 +5,7 @@ using UnifiProtectClient.Domain.Cameras;
 
 namespace UnifiProtectClient.Application.Ports;
 
-public interface IUnifiProtectApiClient
+public interface ICameraProvider
 {
     Task<IReadOnlyList<Camera>> GetCamerasAsync(CancellationToken ct = default);
     Task<IReadOnlyList<RtspsStream>> GetRtspsStreamsAsync(string cameraId, CancellationToken ct = default);

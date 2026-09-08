@@ -24,7 +24,7 @@ public sealed partial class CameraView : Page
 
         if (e.Parameter is not Camera camera) return;
 
-        var apiClient = Ioc.Default.GetRequiredService<IUnifiProtectApiClient>();
+        var apiClient = Ioc.Default.GetRequiredService<ICameraProvider>();
         var options   = Ioc.Default.GetRequiredService<IOptions<UnifiProtectOptions>>();
 
         _viewModel = new CameraViewModel(camera, apiClient, options, DispatcherQueue);

@@ -27,10 +27,10 @@ internal sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessa
 [TestClass]
 public sealed class UnifiProtectApiClientTests
 {
-    private static UnifiProtectApiClient CreateClient(StubHttpHandler handler)
+    private static UnifiProtectApiClient CreateClient(StubHttpHandler handler, string? reachableHost = null)
     {
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://host/api/") };
-        return new UnifiProtectApiClient(http);
+        return new UnifiProtectApiClient(http, reachableHost);
     }
 
     // ── GetCamerasAsync ───────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ public sealed class UnifiProtectApiClientTests
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
         Assert.ContainsSingle(streams);
-        Assert.AreEqual("rtsps://host/high", streams[0].Url);
+        Assert.AreEqual("rtsp://host/high", streams[0].Url);
         Assert.AreEqual("high", streams[0].StreamName);
     }
 
@@ -154,6 +154,28 @@ public sealed class UnifiProtectApiClientTests
     }
 
     [TestMethod]
+    public async Task GetRtspsStreamsAsync_PortAndSrtpQuery_NormalizedForLibVlc()
+    {
+        const string json = """{"high":"rtsps://host:7441/stream?enableSrtp","medium":null,"low":null,"package":null}""";
+        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+
+        var streams = await client.GetRtspsStreamsAsync("cam1");
+
+        Assert.AreEqual("rtsp://host:7447/stream", streams[0].Url);
+    }
+
+    [TestMethod]
+    public async Task GetRtspsStreamsAsync_HostDiffersFromReachableHost_RewritesHost()
+    {
+        const string json = """{"high":"rtsps://console-lan-ip/stream","medium":null,"low":null,"package":null}""";
+        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json), reachableHost: "host");
+
+        var streams = await client.GetRtspsStreamsAsync("cam1");
+
+        Assert.AreEqual("rtsp://host/stream", streams[0].Url);
+    }
+
+    [TestMethod]
     public async Task GetRtspsStreamsAsync_ServerError_ThrowsHttpRequestException()
     {
         var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.NotFound, "Not found"));
@@ -170,7 +192,7 @@ public sealed class UnifiProtectApiClientTests
 
         var stream = await client.CreateRtspsStreamAsync("cam1");
 
-        Assert.AreEqual("rtsps://host/high", stream.Url);
+        Assert.AreEqual("rtsp://host/high", stream.Url);
         Assert.AreEqual("high", stream.StreamName);
     }
 

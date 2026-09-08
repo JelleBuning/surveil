@@ -25,9 +25,10 @@ public sealed partial class MainWindow
     public MainViewModel ViewModel { get; }
 
     public MainWindow(
-        IUnifiProtectApiClient apiClient,
+        ICameraProvider apiClient,
         IProtectEventStream eventStream,
         IDesktopNotifier notifier,
+        ISettingsChangeNotifier settingsNotifier,
         IOptions<EventNotificationSettings> eventSettings)
     {
         InitializeComponent();
@@ -42,6 +43,7 @@ public sealed partial class MainWindow
             apiClient,
             eventStream,
             notifier,
+            settingsNotifier,
             eventSettings.Value,
             DispatcherQueue.GetForCurrentThread());
         RootGrid.DataContext = ViewModel;
@@ -53,6 +55,12 @@ public sealed partial class MainWindow
 
     private void OnCamerasChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            CamerasGroup.MenuItems.Clear();
+            return;
+        }
+
         if (e.Action != NotifyCollectionChangedAction.Add) return;
 
         foreach (Camera camera in e.NewItems!)

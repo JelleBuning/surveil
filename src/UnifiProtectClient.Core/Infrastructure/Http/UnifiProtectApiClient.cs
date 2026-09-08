@@ -12,7 +12,7 @@ using UnifiProtectClient.Domain.Cameras;
 
 namespace UnifiProtectClient.Infrastructure.Http;
 
-public sealed class UnifiProtectApiClient : IUnifiProtectApiClient
+public sealed class UnifiProtectApiClient : ICameraProvider
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -21,6 +21,7 @@ public sealed class UnifiProtectApiClient : IUnifiProtectApiClient
     };
 
     private readonly HttpClient _http;
+    private readonly string _reachableHost;
 
     public UnifiProtectApiClient(IOptions<UnifiProtectOptions> options)
     {
@@ -32,14 +33,20 @@ public sealed class UnifiProtectApiClient : IUnifiProtectApiClient
 
         _http = new HttpClient(handler)
         {
-            BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/")
+            BaseAddress = new Uri($"{opts.BaseUrl.TrimEnd('/')}/{UnifiProtectOptions.ApiPath}/")
         };
 
         _http.DefaultRequestHeaders.Add("Accept", "application/json");
         _http.DefaultRequestHeaders.Add("X-API-KEY", opts.ApiKey);
+
+        _reachableHost = new Uri(opts.BaseUrl).Host;
     }
 
-    internal UnifiProtectApiClient(HttpClient httpClient) => _http = httpClient;
+    internal UnifiProtectApiClient(HttpClient httpClient, string? reachableHost = null)
+    {
+        _http = httpClient;
+        _reachableHost = reachableHost ?? httpClient.BaseAddress?.Host ?? string.Empty;
+    }
 
     public async Task<IReadOnlyList<Camera>> GetCamerasAsync(CancellationToken ct = default)
     {
@@ -51,7 +58,7 @@ public sealed class UnifiProtectApiClient : IUnifiProtectApiClient
     {
         var dto = await GetJsonAsync<RtspsStreamDto>($"v1/cameras/{cameraId}/rtsps-stream", ct);
         var best = dto?.BestStream();
-        return best.HasValue ? [new RtspsStream(best.Value.Url, best.Value.Quality)] : [];
+        return best.HasValue ? [new RtspsStream(NormalizeForLibVlc(best.Value.Url), best.Value.Quality)] : [];
     }
 
     public async Task<RtspsStream> CreateRtspsStreamAsync(string cameraId, CancellationToken ct = default)
@@ -61,7 +68,29 @@ public sealed class UnifiProtectApiClient : IUnifiProtectApiClient
         var dto = await DeserializeAsync<RtspsStreamDto>(response, ct);
         var best = dto?.BestStream()
                    ?? throw new InvalidOperationException("No usable RTSPS URL in CreateRtspsStream response.");
-        return new RtspsStream(best.Url, best.Quality);
+        return new RtspsStream(NormalizeForLibVlc(best.Url), best.Quality);
+    }
+
+    /// <summary>
+    /// LibVLC 3.x cannot handle RTSPS (TLS) or SRTP, so this rewrites to plain RTSP on
+    /// the unencrypted media port (7447). It also corrects the host to the one used to
+    /// reach the API, since the console can report an RTSP host (e.g. a stale/secondary
+    /// interface) that isn't reachable from wherever this client is running (notably: a VPN).
+    /// </summary>
+    private string NormalizeForLibVlc(string url)
+    {
+        var rewritten = url
+            .Replace("rtsps://", "rtsp://")
+            .Replace(":7441/", ":7447/")
+            .Replace("?enableSrtp", "")
+            .TrimEnd('?');
+
+        var streamUri = new Uri(rewritten);
+        if (string.IsNullOrEmpty(_reachableHost) ||
+            string.Equals(streamUri.Host, _reachableHost, StringComparison.OrdinalIgnoreCase))
+            return rewritten;
+
+        return new UriBuilder(streamUri) { Host = _reachableHost }.Uri.ToString();
     }
 
     /// <summary>

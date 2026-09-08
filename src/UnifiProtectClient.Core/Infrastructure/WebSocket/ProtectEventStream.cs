@@ -11,42 +11,81 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using UnifiProtectClient.Application.Options;
 using UnifiProtectClient.Application.Ports;
+using UnifiProtectClient.Application.Settings;
 using UnifiProtectClient.Domain.Events;
 
 namespace UnifiProtectClient.Infrastructure.WebSocket;
 
 public sealed class ProtectEventStream : IProtectEventStream
 {
-    private readonly UnifiProtectOptions _options;
+    private readonly object _optionsLock = new();
+    private UnifiProtectOptions _options;
     private readonly IWebSocketFactory _wsFactory;
 
-    public ProtectEventStream(IOptions<UnifiProtectOptions> options)
-        : this(options, new ClientWebSocketFactory()) { }
+    // Swapped out (and the old one cancelled) whenever settings change, so an in-flight
+    // connect/receive aborts and the retry loop immediately picks up fresh settings
+    // instead of waiting for a natural disconnect.
+    private CancellationTokenSource _reconnectCts = new();
 
-    internal ProtectEventStream(IOptions<UnifiProtectOptions> options, IWebSocketFactory wsFactory)
+    public ProtectEventStream(IOptions<UnifiProtectOptions> options, ISettingsChangeNotifier notifier)
+        : this(options, new ClientWebSocketFactory(), notifier) { }
+
+    internal ProtectEventStream(
+        IOptions<UnifiProtectOptions> options,
+        IWebSocketFactory wsFactory,
+        ISettingsChangeNotifier? notifier = null)
     {
         _options = options.Value;
         _wsFactory = wsFactory;
+
+        if (notifier is not null)
+            notifier.SettingsChanged += OnSettingsChanged;
+    }
+
+    private void OnSettingsChanged(AppSettings settings)
+    {
+        lock (_optionsLock)
+        {
+            _options = new UnifiProtectOptions
+            {
+                BaseUrl      = settings.UnifiProtect.BaseUrl,
+                ApiKey       = settings.UnifiProtect.ApiKey,
+                SnapshotPath = settings.UnifiProtect.SnapshotPath
+            };
+        }
+
+        var oldCts = Interlocked.Exchange(ref _reconnectCts, new CancellationTokenSource());
+        oldCts.Cancel();
+        oldCts.Dispose();
+    }
+
+    private UnifiProtectOptions CurrentOptions
+    {
+        get { lock (_optionsLock) return _options; }
     }
 
     public async IAsyncEnumerable<ProtectEvent> SubscribeAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var wsUri = BuildWebSocketUri();
-        Debug.WriteLine($"[ProtectEventStream] Connecting to {wsUri}");
-
         var backoffMs = 1_000;
 
         while (!ct.IsCancellationRequested)
         {
-            using var ws = _wsFactory.Create(_options.ApiKey);
+            var wsUri = BuildWebSocketUri();
+            Debug.WriteLine($"[ProtectEventStream] Connecting to {wsUri}");
+
+            var reconnectToken = Volatile.Read(ref _reconnectCts).Token;
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, reconnectToken);
+            var token = linkedCts.Token;
+
+            using var ws = _wsFactory.Create(CurrentOptions.ApiKey);
 
             var connected = false;
             var cancelled = false;
 
             try
             {
-                await ws.ConnectAsync(wsUri, ct);
+                await ws.ConnectAsync(wsUri, token);
                 connected = true;
                 backoffMs = 1_000;
                 Debug.WriteLine($"[ProtectEventStream] Connected to {wsUri}");
@@ -54,6 +93,10 @@ public sealed class ProtectEventStream : IProtectEventStream
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 cancelled = true;
+            }
+            catch (OperationCanceledException)
+            {
+                // Settings changed mid-connect — loop again immediately with fresh options.
             }
             catch (Exception ex)
             {
@@ -64,7 +107,7 @@ public sealed class ProtectEventStream : IProtectEventStream
 
             if (connected)
             {
-                await foreach (var ev in ReceiveAsync(ws, ct))
+                await foreach (var ev in ReceiveAsync(ws, token, ct))
                     yield return ev;
 
                 Debug.WriteLine($"[ProtectEventStream] Disconnected (ws state: {ws.State}), retrying in {backoffMs}ms");
@@ -73,10 +116,11 @@ public sealed class ProtectEventStream : IProtectEventStream
             if (ct.IsCancellationRequested) yield break;
 
             var delayCancelled = false;
-            try { await Task.Delay(backoffMs, ct); }
+            try { await Task.Delay(backoffMs, token); }
             catch (OperationCanceledException) { delayCancelled = true; }
 
-            if (delayCancelled) yield break;
+            if (ct.IsCancellationRequested) yield break;
+            if (delayCancelled) continue; // reconnect requested — retry now, don't grow the backoff
 
             backoffMs = Math.Min(backoffMs * 2, 30_000);
         }
@@ -84,9 +128,9 @@ public sealed class ProtectEventStream : IProtectEventStream
 
     internal Uri BuildWebSocketUri()
     {
-        // Preserve the full path from BaseUrl (e.g. /proxy/protect/api)
-        // so the WebSocket URL is wss://host/proxy/protect/api/v1/subscribe/events.
-        var baseUri = new Uri(_options.BaseUrl.TrimEnd('/') + "/");
+        // BaseUrl is the console address only; the integration API path is fixed,
+        // so the WebSocket URL is wss://host/proxy/protect/integration/v1/subscribe/events.
+        var baseUri = new Uri($"{CurrentOptions.BaseUrl.TrimEnd('/')}/{UnifiProtectOptions.ApiPath}/");
         var builder = new UriBuilder(baseUri)
         {
             Scheme = baseUri.Scheme == "https" ? "wss" : "ws"
@@ -96,6 +140,7 @@ public sealed class ProtectEventStream : IProtectEventStream
 
     private static async IAsyncEnumerable<ProtectEvent> ReceiveAsync(
         IWebSocketConnection ws,
+        CancellationToken receiveToken,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var buffer = new byte[64 * 1024];
@@ -104,16 +149,31 @@ public sealed class ProtectEventStream : IProtectEventStream
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
             sb.Clear();
+            var closed = false;
+            var interrupted = false;
             bool endOfMessage;
 
             do
             {
-                var result = await ws.ReceiveAsync(buffer.AsMemory(), ct);
-                if (result.MessageType == WebSocketMessageType.Close) yield break;
+                ValueWebSocketReceiveResult result;
+                try
+                {
+                    result = await ws.ReceiveAsync(buffer.AsMemory(), receiveToken);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Settings changed — end this receive loop so the caller can reconnect.
+                    interrupted = true;
+                    break;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Close) { closed = true; break; }
                 sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 endOfMessage = result.EndOfMessage;
             }
             while (!endOfMessage);
+
+            if (closed || interrupted) yield break;
 
             var ev = ParseEvent(sb.ToString());
             if (ev is not null)

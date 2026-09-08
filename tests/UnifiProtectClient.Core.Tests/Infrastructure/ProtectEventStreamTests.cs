@@ -8,7 +8,9 @@ using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using UnifiProtectClient.Application.Options;
+using UnifiProtectClient.Application.Settings;
 using UnifiProtectClient.Domain.Events;
+using UnifiProtectClient.Infrastructure.Settings;
 using UnifiProtectClient.Infrastructure.WebSocket;
 
 namespace UnifiProtectClient.Core.Tests.Infrastructure;
@@ -322,13 +324,13 @@ public sealed class ProtectEventStreamParseTests
     {
         var options = Options.Create(new UnifiProtectOptions
         {
-            BaseUrl = "https://192.168.1.1/proxy/protect/api",
+            BaseUrl = "https://192.168.0.1/proxy/protect/api",
             ApiKey = "key"
         });
         var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object);
         var uri = stream.BuildWebSocketUri();
         Assert.AreEqual("wss", uri.Scheme);
-        Assert.AreEqual("192.168.1.1", uri.Host);
+        Assert.AreEqual("192.168.0.1", uri.Host);
         Assert.IsTrue(uri.AbsolutePath.EndsWith("/v1/subscribe/events"));
     }
 
@@ -337,7 +339,7 @@ public sealed class ProtectEventStreamParseTests
     {
         var options = Options.Create(new UnifiProtectOptions
         {
-            BaseUrl = "http://192.168.1.1/api",
+            BaseUrl = "http://192.168.0.1/api",
             ApiKey = "key"
         });
         var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object);
@@ -511,5 +513,85 @@ public sealed class ProtectEventStreamParseTests
         // Close message causes yield break → retry loop → eventually cancelled
         Assert.IsEmpty(events);
         Assert.IsTrue(callCount > 0, "At least one receive call was made");
+    }
+
+    // ── Live settings reload ──────────────────────────────────────────────────
+
+    [TestMethod]
+    public void SettingsChanged_UpdatesBuildWebSocketUri()
+    {
+        var options = Options.Create(new UnifiProtectOptions { BaseUrl = "https://host1", ApiKey = "key1" });
+        var notifier = new SettingsChangeNotifier();
+        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object, notifier);
+
+        Assert.AreEqual("host1", stream.BuildWebSocketUri().Host);
+
+        notifier.NotifyChanged(new AppSettings
+        {
+            SelectedProvider = VideoProviderType.UnifiProtect,
+            UnifiProtect = new UnifiProtectProviderSettings { BaseUrl = "https://host2", ApiKey = "key2" }
+        });
+
+        Assert.AreEqual("host2", stream.BuildWebSocketUri().Host);
+    }
+
+    [TestMethod]
+    public async Task SettingsChanged_DuringConnect_AbortsAndReconnectsWithNewApiKey()
+    {
+        // Arrange: first connection attempt hangs (simulating an in-flight connect) until
+        // the settings-changed reconnect token cancels it; the second attempt (post-reload)
+        // connects immediately, then a Close message ends the receive loop so the test can finish.
+        var options = Options.Create(new UnifiProtectOptions { BaseUrl = "https://host", ApiKey = "old-key" });
+        var notifier = new SettingsChangeNotifier();
+        var wsFactoryMock = new Mock<IWebSocketFactory>();
+        var capturedApiKeys = new List<string>();
+        var firstConnectStarted = new TaskCompletionSource();
+
+        wsFactoryMock.Setup(f => f.Create(It.IsAny<string>())).Returns((string apiKey) =>
+        {
+            capturedApiKeys.Add(apiKey);
+            var wsMock = new Mock<IWebSocketConnection>();
+
+            if (capturedApiKeys.Count == 1)
+            {
+                wsMock.Setup(w => w.ConnectAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()))
+                      .Returns((Uri _, CancellationToken ct) =>
+                      {
+                          firstConnectStarted.TrySetResult();
+                          return Task.Delay(Timeout.Infinite, ct);
+                      });
+            }
+            else
+            {
+                wsMock.Setup(w => w.ConnectAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()))
+                      .Returns(Task.CompletedTask);
+                wsMock.SetupGet(w => w.State).Returns(WebSocketState.Open);
+                wsMock.Setup(w => w.ReceiveAsync(It.IsAny<Memory<byte>>(), It.IsAny<CancellationToken>()))
+                      .Returns(new ValueTask<ValueWebSocketReceiveResult>(
+                          new ValueWebSocketReceiveResult(0, WebSocketMessageType.Close, true)));
+            }
+
+            return wsMock.Object;
+        });
+
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, notifier);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var readTask = Task.Run(async () =>
+        {
+            await foreach (var _ in stream.SubscribeAsync(cts.Token)) { }
+        });
+
+        await firstConnectStarted.Task;
+
+        notifier.NotifyChanged(new AppSettings
+        {
+            SelectedProvider = VideoProviderType.UnifiProtect,
+            UnifiProtect = new UnifiProtectProviderSettings { BaseUrl = "https://host", ApiKey = "new-key" }
+        });
+
+        await readTask;
+
+        CollectionAssert.Contains(capturedApiKeys, "new-key");
     }
 }

@@ -40,7 +40,7 @@
                            Style="{StaticResource SubtitleTextBlockStyle}" />
 
                 <TextBox Header="Base URL"
-                         PlaceholderText="https://192.168.1.1/proxy/protect/integration"
+                         PlaceholderText="https://192.168.0.1"
                          Text="{Binding BaseUrl, Mode=TwoWay}"
                          HorizontalAlignment="Stretch" />
 
@@ -64,7 +64,7 @@
             <InfoBar IsOpen="{Binding ShowSuccess, Mode=TwoWay}"
                      Severity="Success"
                      Title="Settings saved"
-                     Message="..."
+                     Message=""
                      IsClosable="True" />
 
             <!-- Feedback: validation error -->

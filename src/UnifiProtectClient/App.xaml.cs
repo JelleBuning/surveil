@@ -3,6 +3,7 @@ using H.NotifyIcon;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
@@ -10,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using UnifiProtectClient.Application.Options;
 using UnifiProtectClient.Application.Ports;
+using UnifiProtectClient.Application.Settings;
 using UnifiProtectClient.Infrastructure.Http;
 using UnifiProtectClient.Infrastructure.Settings;
 using UnifiProtectClient.Infrastructure.WebSocket;
@@ -63,8 +65,10 @@ public partial class App
             builder.Services.Configure<EventNotificationSettings>(builder.Configuration.GetSection(EventNotificationSettings.SectionName));
 
             builder.Services.AddSingleton<IAppSettingsRepository>(_ => settingsRepo);
+            builder.Services.AddSingleton(appSettings);
+            builder.Services.AddSingleton<ISettingsChangeNotifier, SettingsChangeNotifier>();
 
-            builder.Services.AddSingleton<IUnifiProtectApiClient, UnifiProtectApiClient>();
+            builder.Services.AddSingleton<ICameraProvider, ReloadableCameraProvider>();
             builder.Services.AddSingleton<IProtectEventStream, ProtectEventStream>();
             builder.Services.AddTransient<IDesktopNotifier, DesktopNotifier>();
             builder.Services.AddTransient<SettingsViewModel>();

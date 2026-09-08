@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnifiProtectClient.Application.Options;
 using UnifiProtectClient.Application.Ports;
+using UnifiProtectClient.Application.Settings;
 using UnifiProtectClient.Domain.Cameras;
 using UnifiProtectClient.Domain.Events;
 using UnifiProtectClient.Services.Interfaces;
@@ -19,9 +20,10 @@ namespace UnifiProtectClient.ViewModels;
 public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly MainWindow _mainWindow;
-    private readonly IUnifiProtectApiClient _apiClient;
+    private readonly ICameraProvider _apiClient;
     private readonly IProtectEventStream _eventStream;
     private readonly IDesktopNotifier _notifier;
+    private readonly ISettingsChangeNotifier _settingsNotifier;
     private readonly EventNotificationSettings _eventSettings;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly CancellationTokenSource _cts = new();
@@ -38,9 +40,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public MainViewModel(
         MainWindow mainWindow,
-        IUnifiProtectApiClient apiClient,
+        ICameraProvider apiClient,
         IProtectEventStream eventStream,
         IDesktopNotifier notifier,
+        ISettingsChangeNotifier settingsNotifier,
         EventNotificationSettings eventSettings,
         DispatcherQueue dispatcherQueue)
     {
@@ -48,11 +51,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _apiClient = apiClient;
         _eventStream = eventStream;
         _notifier = notifier;
+        _settingsNotifier = settingsNotifier;
         _eventSettings = eventSettings;
         _dispatcherQueue = dispatcherQueue;
 
+        _settingsNotifier.SettingsChanged += OnSettingsChanged;
+
         _ = InitializeCamerasAsync(_cts.Token);
         _ = SubscribeToEventsAsync(_cts.Token);
+    }
+
+    private void OnSettingsChanged(AppSettings settings)
+    {
+        _dispatcherQueue.TryEnqueue(() => Cameras.Clear());
+        _ = InitializeCamerasAsync(_cts.Token);
     }
 
     private async Task InitializeCamerasAsync(CancellationToken ct)
@@ -104,6 +116,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _settingsNotifier.SettingsChanged -= OnSettingsChanged;
         _cts.Cancel();
         _cts.Dispose();
     }

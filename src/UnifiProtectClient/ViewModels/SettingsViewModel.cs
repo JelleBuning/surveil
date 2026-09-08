@@ -1,22 +1,20 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.Options;
 using Microsoft.UI.Xaml;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using UnifiProtectClient.Application.Options;
 using UnifiProtectClient.Application.Ports;
 using UnifiProtectClient.Application.Settings;
 
 namespace UnifiProtectClient.ViewModels;
 
-public sealed record VideoProviderOption(VideoProviderType Type, string DisplayName);
-
 public partial class SettingsViewModel : ObservableObject
 {
     private readonly IAppSettingsRepository _repository;
+    private readonly ISettingsChangeNotifier _notifier;
 
     public IReadOnlyList<VideoProviderOption> AvailableProviders { get; } =
     [
@@ -80,16 +78,18 @@ public partial class SettingsViewModel : ObservableObject
     } = string.Empty;
 
     public SettingsViewModel(
-        IOptions<UnifiProtectOptions> currentOptions,
-        IAppSettingsRepository repository)
+        AppSettings currentSettings,
+        IAppSettingsRepository repository,
+        ISettingsChangeNotifier notifier)
     {
         _repository = repository;
+        _notifier   = notifier;
 
-        var opts = currentOptions.Value;
-        SelectedProvider = AvailableProviders[0];
-        BaseUrl          = opts.BaseUrl;
-        ApiKey           = opts.ApiKey;
-        SnapshotPath     = opts.SnapshotPath ?? string.Empty;
+        SelectedProvider = AvailableProviders.FirstOrDefault(p => p.Type == currentSettings.SelectedProvider)
+                            ?? AvailableProviders[0];
+        BaseUrl          = currentSettings.UnifiProtect.BaseUrl;
+        ApiKey           = currentSettings.UnifiProtect.ApiKey;
+        SnapshotPath     = currentSettings.UnifiProtect.SnapshotPath ?? string.Empty;
     }
 
     [RelayCommand]
@@ -112,6 +112,7 @@ public partial class SettingsViewModel : ObservableObject
         };
 
         await _repository.SaveAsync(settings, ct);
+        _notifier.NotifyChanged(settings);
         ShowSuccess = true;
     }
 
@@ -129,7 +130,7 @@ public partial class SettingsViewModel : ObservableObject
 
         if (!Uri.TryCreate(BaseUrl.Trim(), UriKind.Absolute, out _))
         {
-            ErrorMessage = "Base URL must be a valid absolute URL (e.g. https://192.168.1.1/proxy/protect/integration).";
+            ErrorMessage = "Base URL must be a valid absolute URL (e.g. https://192.168.0.1).";
             ShowError    = true;
             return false;
         }
