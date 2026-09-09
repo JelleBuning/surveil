@@ -68,7 +68,7 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
             _player = new RtspVideoPlayer(stream.Url);
             _player.FrameReady    += OnFrameReady;
             _player.StatusChanged += OnStatusChanged;
-            _player.Start();
+            await Task.Run(_player.Start, ct);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
