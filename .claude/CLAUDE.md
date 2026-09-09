@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MarYor.AudiologicX is a **modular monolith** (.NET 10 / C# 13) that collects patient data from various audiology source systems and converts it into a single, uniform domain model. It's currently a PoC: an ASP.NET Core Minimal API backend plus a Blazor WebAssembly frontend, backed by SQL Server.
+Surveil is a lightweight Windows desktop client (.NET 10 / C# 13, WinUI 3) that connects to a
+UniFi Protect controller to receive real-time doorbell notifications and view live/RTSPS camera
+feeds, with an eye toward supporting other camera/NVR providers later.
 
 ## Workflow
 
@@ -12,17 +14,23 @@ Use /implement-issue <number> to pick up a GitHub issue: plan → wait for appro
 
 ### Automated dev-cycle
 
-`/dev-cycle` picks the oldest `status:refined` issue and drives it through plan → implement → test → review via the subagents in `.claude/agents/`, stopping for approval before code and before any PR; it never merges. Run it on a loop: `/loop 5m /dev-cycle`.
+`/dev-cycle` picks the oldest `refined`-labeled issue and drives it through plan → implement → test → review via the subagents in `.claude/agents/`, stopping for approval before code and before any PR; it never merges. Run it on a loop: `/loop 5m /dev-cycle`.
 
-`status:refined` is applied **by hand**; /dev-cycle moves it to `status:in-progress` → `status:in-review`. An aborted run leaves it on `status:in-progress` so the loop won't re-pick it.
+`refined` is applied **by hand**; /dev-cycle moves it to `in-progress` → `in-review`. An aborted run leaves it on `in-progress` so the loop won't re-pick it.
+
+This repo's actual labels are: `bug`, `documentation`, `enhancement`, `duplicate`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`, `dependencies`, `github_actions`, plus bare `refined`/`in-progress`/`in-review` (no `status:`/`type:`/`area:`/`size:` prefixes). Don't invent a label scheme that doesn't exist here — check `gh label list` before applying labels to an issue.
 
 ### Branch naming
 
-Every branch name must match `(main|master|(features|bugs|hotfix)\/[0-9]+-.+)`:
-- `main` / `master` — the default branches.
-- `features/<issue-number>-<slug>` — new functionality (e.g. `features/12-serilog-logging`).
-- `bugs/<issue-number>-<slug>` — fixing incorrect/unwanted existing behavior (e.g. `bugs/13-hide-stacktrace`).
+Branches follow `(main|(features|bugs|hotfix)\/[0-9]+-.+)` when tied to an issue:
+- `main` — the default branch.
+- `features/<issue-number>-<slug>` — new functionality.
+- `bugs/<issue-number>-<slug>` — fixing incorrect/unwanted existing behavior.
 - `hotfix/<issue-number>-<slug>` — urgent fixes.
+
+Some existing branches predate this convention and don't carry an issue number (e.g.
+`features/improve-workflow`) — that's historical, not something to imitate for new work tied to
+an issue.
 
 The `EnterWorktree` tool always prefixes branch names with `worktree-`, which breaks this convention. After creating a worktree, immediately rename the branch with `git branch -m <features|bugs|hotfix>/<issue-number>-<slug>` before making any commits.
 
@@ -30,80 +38,80 @@ The `EnterWorktree` tool always prefixes branch names with `worktree-`, which br
 
 ```bash
 # Build the whole solution
-dotnet build MarYor.AudiologicX.slnx
+dotnet build Surveil.slnx
 
-# Run the API (Minimal API host, Scalar UI at /scalar in Development)
-dotnet run --project src/MarYor.AudiologicX.Api
+# Run the WinUI app
+dotnet run --project src/Surveil
 
-# Run the Blazor WASM client (expects the API at https://localhost:6002, see wwwroot/appsettings.json)
-dotnet run --project src/MarYor.AudiologicX.Web
+# Run the tests
+dotnet test tests/Surveil.Core.Tests
 
-# Run a single test project / single test (once a *.UnitTests project exists)
-dotnet test src/MarYor.AudiologicX.Api.Core.Patients.UnitTests
-dotnet test --filter "FullyQualifiedName~CreatePatientHandlerTests.Handle__WhenCommandIsValid__ShouldPersistPatient"
+# Run a single test
+dotnet test --filter "FullyQualifiedName~ProtectEventStreamTests.SomeMethod"
 ```
 
-There is no test project yet — `tests/` is an empty solution folder, and no test framework package is pinned in `Directory.Packages.props`. When adding the first tests, create a `{Module}.UnitTests` project referencing `Api.Core.{Module}` and `Api.EntityFramework`, and wire its `.csproj` into `MarYor.AudiologicX.slnx`.
-
-`Nullable` is enabled on every project. `TreatWarningsAsErrors` is currently only set on `Api.Core.Patients` — match that pattern (nullable-clean, warning-free) when adding new module projects even where the flag isn't yet set.
+Tests use **MSTest** + **Moq** (`Microsoft.NET.Test.Sdk`, `MSTest.TestFramework`, `MSTest.TestAdapter`, `Moq`), not xUnit/NUnit. Each `Surveil.Core` internal type under test is exposed to the test project via `InternalsVisibleTo` in `Surveil.Core.csproj` (also `InternalsVisibleTo` to `DynamicProxyGenAssembly2` for Moq's dynamic proxies) rather than making everything public.
 
 Package versions are centrally managed in `Directory.Packages.props` (`ManagePackageVersionsCentrally=true`) — never add a `Version` attribute to a `PackageReference` in a `.csproj`; add/bump the version in `Directory.Packages.props` instead.
 
+`Nullable` is enabled and `ImplicitUsings` is **disabled** (explicit `using`s only) on every project — match this in new projects.
+
 ## Architecture
 
-**Vertical Slice Architecture with CQRS**, wrapped in a modular-monolith project layout. Each module (currently `Patients` and the cross-cutting `Auth` module) gets its own project, and modules never reference each other's projects — they only share `Api.Core` and, if they need persistence, `Api.EntityFramework`.
+**Layered, provider-oriented modular structure.** Currently two projects, with a provider module
+(`Surveil.Unifi`) planned:
 
 ```
-Api.Core                      ← no project deps: IEndpoint, Result<T>, PagedResult<T>, endpoint auto-discovery
-Api.Core.{Module}             ← depends on: Api.Core, + Api.EntityFramework only if the module persists data   (commands/queries/handlers/validators + IEndpoint dispatchers, per use case)
-Api.EntityFramework           ← depends on: EF Core only                   (AppDbContext, entities, configurations)
-Api (Host)                    ← depends on: Api.Core, Api.EntityFramework, Api.Core.{Module} for every module
-Web                           ← standalone Blazor WASM client, no project references to any Api.* project — talks to the Api host purely over HttpClient
+Surveil.Core     ← Domain/Application/Infrastructure/Services layers (see below); provider-agnostic ports live here
+Surveil          ← WinUI 3 host: Views (XAML), ViewModels, composition (App.xaml.cs); depends on Surveil.Core
+Surveil.Unifi    ← (planned) UniFi Protect-specific provider implementation, depends on Surveil.Core's ports
 ```
 
-A module's endpoints live in the same project as its command/query handlers — there is no separate `.Endpoints` project per module. The Host (`src/MarYor.AudiologicX.Api`) references each `Api.Core.{Module}` project directly so its `IEndpoint` implementations get loaded; the Host itself contains no business logic, just `Program.cs` composition. This applies even to infrastructure/cross-cutting concerns with no CQRS use case behind them — e.g. `Api.Core.Auth`'s `LoginEndpoint`/`LogoutEndpoint` just call `Results.Challenge`/`Results.SignOut` directly (no command/handler needed), but they are still `IEndpoint` implementations in their own module project, never `app.MapGet`/`app.MapPost` calls inline in `Program.cs`.
+The intent going forward: `Surveil.Core` stays provider-agnostic (ports + domain + generic
+services), and each concrete camera/NVR provider gets its own project (starting with
+`Surveil.Unifi`) that implements those ports. `Surveil` (the app) references `Surveil.Core` and
+every provider module directly. If a provider module later grows too large for one project (e.g.
+it needs its own internal layering), split out a `{Provider}.Core` the same way `Surveil.Core`
+was split from `Surveil` — don't do that split preemptively.
 
-`Web` intentionally does not share a contracts project with the API: it redeclares its own `Result`/`PagedResult`/DTO types under `Web/Models/`. Keep them in sync by hand when API contracts change — there is no shared assembly to update instead.
+### `Surveil.Core` internal layering
 
-### Request flow
+```
+Domain/          ← plain entities, no dependencies on anything else (Cameras/, Events/)
+Application/     ← the use-case layer: Ports/ (interfaces like ICameraProvider, IProtectEventStream —
+                   what the app needs, not how), plus Options/ and Settings/ (config shapes/records)
+Infrastructure/  ← concrete implementations of Application/Ports/ interfaces (Http/, WebSocket/,
+                   Settings/) — e.g. UnifiProtectApiClient implements ICameraProvider over HTTP
+Services/        ← app-level services with no port/interface split (VLC playback, notifications,
+                   snapshotting) — used directly by the app, not swapped via DI abstraction
+```
 
-1. `IEndpoint` implementation (in `{Module}/{UseCase}/v{n}/`) receives the HTTP request and sends a command/query via `IMediator` — no logic here.
-2. `Mediator` (source-generated package by Martin Othamar, **not MediatR**) dispatches to the handler. Handlers are auto-registered by the source generator — never register them manually.
-3. FluentValidation validators are colocated per command/query (e.g. `CreatePatientValidator`) — handlers can assume input is already valid. Note: no pipeline behavior is currently registered in `Program.cs`, so double-check a validator actually runs before relying on it.
-4. The handler (in `{Module}/{UseCase}/v{n}/`) talks to `AppDbContext` directly and returns `Result<T>` — never throws for business-rule failures.
-5. The endpoint maps `Result<T>` to an HTTP response (`Results.Ok`, `Results.BadRequest`, etc.).
+Dependency rule: `Infrastructure` depends on and implements `Application/Ports` interfaces, never
+the other way around. A type belongs in `Application/Options` or `Application/Settings` if it's a
+config *contract* the application layer depends on; it belongs in `Infrastructure` if it's a
+concrete, swappable implementation detail.
 
-### Endpoint auto-discovery & API versioning
+`ReloadableCameraProvider` (`Infrastructure/Http`) is the one exception worth knowing: it wraps
+whatever `ICameraProvider` matches the current `VideoProviderType` setting and hot-swaps it when
+settings change, so callers never need the app restarted after a settings save.
 
-`Api.Core/DependencyInjection.cs` (`ApplicationBuilderExtensions`) reflects over loaded assemblies for `IEndpoint` implementations, registers them as singletons, and groups them into versioned route groups (`/api/v{apiVersion}`) based on each endpoint's `Version` property (via Asp.Versioning). In Development, it also maps OpenAPI docs and a Scalar UI per API version. Endpoints are never mapped by hand in `Program.cs` — just `app.MapEndpoints()`.
+### `Surveil` (the WinUI host)
 
-### One module, one vertical slice per use case
+`Views/` (XAML + code-behind), `ViewModels/` (CommunityToolkit.Mvvm), and `App.xaml.cs` for
+composition — DI registration, settings loading, and host startup. `App.xaml.cs` is the only
+place services get registered; there's no separate composition-root project.
 
-Inside `Api.Core.Patients`, each use case (`Create`, `Update`, `Delete`, `GetById`, `GetAll`) is its own folder containing exactly that use case's command/query, handler, validator, DTO, and endpoint — never combine two use cases in one folder. The endpoint lives one level deeper, under a `v{n}/` subfolder (e.g. `Create/v1/CreatePatientEndpoint.cs`, namespace `MarYor.AudiologicX.Api.Core.Patients.Create.v1`), so a use case can gain a `v2/` endpoint later without moving the command/handler/validator it still shares.
+## Key conventions
 
-### EF Core conventions
-
-Entities are `sealed class` with an `IEntityTypeConfiguration<T>` (Fluent API, no data-annotation attributes). `Patient` follows a soft-delete pattern (`Deleted` bool + global `HasQueryFilter`) and hardcoded audit columns (`CreateDate/CreateUserId/ModifyDate/ModifyUserId`) — there is no real auth/user context wired up yet, so `UserId` is currently hardcoded to `1`. Follow the same soft-delete + audit-column shape for new entities until real auth lands.
-
-### Domain language — use these terms verbatim in code, comments, and tests
-
-- **Patient** — the individual receiving audiological care
-- **SourceSystem** — an external system delivering patient data
-- **Intake** — a raw data payload received from a SourceSystem
-- **PatientRecord** — the normalized, uniform representation of a patient in the platform
-- **Mapping** — the transformation logic from a SourceSystem format to the domain model
-- **Audiogram** — a structured representation of a patient's hearing test result
-
-### Key conventions
-
-- `sealed` on every class not designed for inheritance; `record` for commands/queries/DTOs.
-- Mediator handlers return `ValueTask<T>`; all async methods take a `CancellationToken`.
-- No controllers (Minimal API + `IEndpoint` only), no MediatR, no DataAnnotations (FluentValidation only), no manual Mediator/endpoint registration.
-- Never add `app.MapGet`/`app.MapPost`/etc. directly in `Program.cs`. Every HTTP endpoint — including auth/infra endpoints with no CQRS command behind them — is an `IEndpoint` implementation living in its own module project (e.g. `Api.Core.Auth`), picked up by the same auto-discovery as `Api.Core.Patients`. `Program.cs` only does service/middleware composition and `app.MapEndpoints()`.
+- `sealed` on every class not designed for inheritance; `record` for domain entities, settings, and options types (e.g. `Camera`, `RtspsStream`, `ProtectEvent`, `AppSettings`, `VideoProviderOption`).
+- Async methods take a `CancellationToken` where cancellation is meaningful (network/IO calls).
+- Interfaces for anything DI needs to swap or mock (`ICameraProvider`, `IProtectEventStream`, `IAppSettingsRepository`, `ISettingsChangeNotifier`, `IDesktopNotifier`, `IVlcPlayerFactory`) — colocated with their implementation, not in a separate `Interfaces/` folder except the existing `Services/Interfaces/` (don't add new interfaces there; colocate with the concrete class instead, matching the newer `Application/Ports` pattern).
 - Prefer `var` by default; no suppressing nullable warnings.
-- In the Web project's HTTP layer (`MarYor.AudiologicX.Web.Http`), each REST client's interface sits directly next to its implementation under `RestClients/{Resource}/` (e.g. `RestClients/Patient/IPatientRestClient.cs` beside `PatientRestClient.cs`) — no separate `Interfaces` subfolder.
-- Never add comments. Code must be self-explanatory through naming and structure alone — no XML doc summaries, no inline explanations.
+- `ImplicitUsings` disabled — write explicit `using` directives.
 
-## Local secrets
+## Local secrets / hooks
 
-`src/MarYor.AudiologicX.Api/appsettings.Development.json` holds a live SQL Server connection string with a plaintext password. It's covered by `.gitignore` but the whole `src/` tree is currently untracked (only `.gitignore` and `README.md` are committed) — never `git add -A`/force-add this file, and double-check `git status` before broad `git add` commands in this repo.
+A `PreToolUse` hook (`.claude/hooks/block-secrets.py`) and a `Stop` hook
+(`.claude/hooks/verify-no-secrets.sh`) already guard against committing secrets in this repo —
+don't bypass or disable them. `git commit` and `git push` are permission-gated (`ask`) in
+`.claude/settings.json`, so they'll always prompt rather than run silently.
