@@ -8,9 +8,11 @@ public sealed class RtspVideoPlayer : IDisposable
 {
     private readonly string _url;
     private readonly IVlcPlayerFactory _factory;
+    private readonly Lock _handleLock = new();
     private IVlcPlayerHandle? _handle;
     private CancellationTokenSource _cts = new();
     private bool _stopped;
+    private bool _disposed;
     private int _reconnectPending; // 0 = idle, 1 = reconnect scheduled (Interlocked)
     private DateTime _connectingStart;
 
@@ -28,8 +30,14 @@ public sealed class RtspVideoPlayer : IDisposable
 
     public void Start()
     {
-        TearDownPlayer();
-        _stopped = false;
+        lock (_handleLock)
+        {
+            if (_disposed) return;
+
+            TearDownPlayerLocked();
+            _stopped = false;
+        }
+
         Interlocked.Exchange(ref _reconnectPending, 0);
         _cts = new CancellationTokenSource();
         StartInternal();
@@ -37,17 +45,22 @@ public sealed class RtspVideoPlayer : IDisposable
 
     internal void StartInternal()
     {
-        if (_stopped) return;
+        lock (_handleLock)
+        {
+            if (_stopped || _disposed) return;
 
-        _connectingStart = DateTime.UtcNow;
-        StatusChanged?.Invoke(this, "Connecting...");
+            _connectingStart = DateTime.UtcNow;
+            StatusChanged?.Invoke(this, "Connecting...");
 
-        _handle = _factory.Create(_url, msg => StatusChanged?.Invoke(this, msg));
-        _handle.Playing += OnHandlePlaying;
-        _handle.EncounteredError += (_, _) => ScheduleReconnect("Playback error");
-        _handle.EndReached += (_, _) => ScheduleReconnect("Stream ended");
-        _handle.FrameReady += (_, frame) => FrameReady?.Invoke(this, frame);
-        _handle.Play();
+            var handle = _factory.Create(_url, msg => StatusChanged?.Invoke(this, msg));
+            handle.Playing += OnHandlePlaying;
+            handle.EncounteredError += (_, _) => ScheduleReconnect("Playback error");
+            handle.EndReached += (_, _) => ScheduleReconnect("Stream ended");
+            handle.FrameReady += (_, frame) => FrameReady?.Invoke(this, frame);
+
+            _handle = handle;
+            handle.Play();
+        }
     }
 
     private void OnHandlePlaying(object? sender, EventArgs e)
@@ -102,9 +115,25 @@ public sealed class RtspVideoPlayer : IDisposable
 
     internal void TearDownPlayer()
     {
+        lock (_handleLock)
+        {
+            TearDownPlayerLocked();
+        }
+    }
+
+    private void TearDownPlayerLocked()
+    {
         _handle?.Dispose();
         _handle = null;
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        lock (_handleLock)
+        {
+            _disposed = true;
+        }
+
+        Stop();
+    }
 }
