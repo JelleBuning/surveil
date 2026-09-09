@@ -10,6 +10,7 @@ public sealed class SnapshotService : IDisposable
 {
     private readonly string _snapshotPath;
     private readonly string _heroPath;
+    private readonly bool _enabled;
     private long _nextSaveTicks;
     private int _saving;
 
@@ -17,8 +18,17 @@ public sealed class SnapshotService : IDisposable
     {
         _snapshotPath = snapshotPath;
         _heroPath = GetHeroPath(snapshotPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(_snapshotPath)!);
         _nextSaveTicks = DateTime.UtcNow.Ticks;
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_snapshotPath)!);
+            _enabled = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SnapshotService] Snapshot directory unavailable, snapshots disabled: {ex.Message}");
+        }
     }
 
     public static string GetHeroPath(string snapshotPath) =>
@@ -28,6 +38,8 @@ public sealed class SnapshotService : IDisposable
 
     public void CaptureFrame(int width, int height, byte[] pixels)
     {
+        if (!_enabled) return;
+
         var now = DateTime.UtcNow.Ticks;
         if (now < Interlocked.Read(ref _nextSaveTicks)) return;
         if (Interlocked.CompareExchange(ref _saving, 1, 0) != 0) return;
