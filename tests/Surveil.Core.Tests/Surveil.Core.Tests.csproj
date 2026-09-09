@@ -6,6 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <Platforms>x86;x64;ARM64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>

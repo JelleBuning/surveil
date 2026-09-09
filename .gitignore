@@ -83,3 +83,7 @@ build_outViews*/
 .DS_Store
 Thumbs.db
 **/appsettings.development.json
+
+# Code signing certificates
+*.pfx
+*.p12

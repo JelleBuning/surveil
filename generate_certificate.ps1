@@ -16,3 +16,4 @@ Remove-Item -Path "Cert:\CurrentUser\My\$($cert.Thumbprint)"
 [Convert]::ToBase64String([IO.File]::ReadAllBytes($certPath)) | Set-Clipboard
 
 Write-Host "Done! Base64 copied to clipboard. Add it as the CERTIFICATE_BASE64 secret on GitHub."
+Write-Host "Also add the password you just entered as the CERTIFICATE_PASSWORD secret on GitHub."
