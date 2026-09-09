@@ -61,6 +61,9 @@ nunit-*.xml
 *.idea
 .vs/
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Local build output
 build_out/
 build_outApp*

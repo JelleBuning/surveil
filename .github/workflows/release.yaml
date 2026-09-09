@@ -59,28 +59,6 @@ jobs:
             -p:AppxPackageSigningEnabled=false `
             -p:AppxBundle=Never
 
-      - name: Decode certificate
-        shell: pwsh
-        run: |
-          $bytes = [Convert]::FromBase64String("${{ secrets.CERTIFICATE_BASE64 }}")
-          [IO.File]::WriteAllBytes("${{ github.workspace }}\cert.pfx", $bytes)
-
-      - name: Sign MSIX
-        shell: pwsh
-        run: |
-          $package = Get-ChildItem -Path "${{ github.workspace }}\AppxPackages" -Filter "*.msix" -Recurse |
-            Select-Object -First 1
-          if (-not $package) { throw "No .msix found in AppxPackages." }
-
-          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Filter "signtool.exe" -Recurse |
-            Where-Object { $_.FullName -match "x64" } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-          if (-not $signtool) { throw "signtool.exe not found." }
-
-          & $signtool.FullName sign /fd SHA256 /f "${{ github.workspace }}\cert.pfx" `
-            /p "${{ secrets.CERTIFICATE_PASSWORD }}" $package.FullName
-
       - name: Rename MSIX with platform suffix
         id: rename
         shell: pwsh
