@@ -13,7 +13,7 @@
 		<Nullable>enable</Nullable>
 		<HasPackageAndPublishMenuSuites>true</HasPackageAndPublishMenuSuites>
 		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-		<PackageCertificateThumbprint>14388DA69AEF54A81F72B91ACEB9AB18DE735978</PackageCertificateThumbprint>
+		<PackageCertificateThumbprint Condition="'$(PackageCertificateKeyFile)' == ''">14388DA69AEF54A81F72B91ACEB9AB18DE735978</PackageCertificateThumbprint>
 		<AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
 	</PropertyGroup>
 	

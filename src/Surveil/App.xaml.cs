@@ -4,10 +4,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Infrastructure.Http;
@@ -23,9 +25,12 @@ namespace Surveil;
 public partial class App
 {
     private MainWindow? _mainWindow;
+    private bool _isShowingErrorDialog;
 
     protected override async void OnLaunched(LaunchActivatedEventArgs _)
     {
+        UnhandledException += OnUnhandledException;
+
         try
         {
             var activationArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
@@ -91,5 +96,38 @@ public partial class App
     {
         if (args.Kind == ExtendedActivationKind.ToastNotification)
             _mainWindow?.DispatcherQueue.TryEnqueue(_mainWindow.BringToFront);
+    }
+
+    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        e.Handled = true;
+        System.Diagnostics.Debug.WriteLine($"[App] Unhandled exception: {e.Exception}");
+
+        if (_mainWindow is null || _isShowingErrorDialog) return;
+
+        _mainWindow.DispatcherQueue.TryEnqueue(async () => await ShowErrorDialogAsync());
+    }
+
+    private async Task ShowErrorDialogAsync()
+    {
+        if (_mainWindow?.Content?.XamlRoot is null) return;
+
+        _isShowingErrorDialog = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Something went wrong",
+                Content = "Surveil ran into an unexpected error and had to recover. If this keeps happening, please report it.",
+                CloseButtonText = "OK",
+                XamlRoot = _mainWindow.Content.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            _isShowingErrorDialog = false;
+        }
     }
 }
