@@ -16,6 +16,10 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Surveil.Core.Tests/Surveil.Core.Tests.csproj" />
+    <Project Path="tests/Surveil.Core.Tests/Surveil.Core.Tests.csproj">
+      <Platform Solution="*|ARM64" Project="ARM64" />
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
   </Folder>
 </Solution>
