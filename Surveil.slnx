@@ -6,7 +6,7 @@
   </Configurations>
   <Folder Name="/src/">
     <Project Path="src/Surveil.Core/Surveil.Core.csproj">
-      <Platform Solution="Release|x64" Project="x64" />
+      <Platform Solution="Debug|x64" Project="x64" />
     </Project>
     <Project Path="src/Surveil/Surveil.csproj">
       <Platform Solution="*|ARM64" Project="ARM64" />

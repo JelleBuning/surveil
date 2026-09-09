@@ -60,7 +60,18 @@ Setting up Surveil on your machine is straightforward.
 
 ### Installation
 
-...
+1. Download the latest `Surveil_<version>_<platform>.msix` for your architecture (x86, x64, or
+   ARM64) and the accompanying `Surveil.cer` from the
+   [Releases](https://github.com/JelleBuning/unifi-protect-client/releases) page.
+2. Trust the publisher certificate (one-time step, since Surveil is self-signed rather than
+   issued by a public CA): open an elevated PowerShell/Command Prompt and run
+   ```
+   certutil -addstore "TrustedPeople" Surveil.cer
+   ```
+   Alternatively, right-click `Surveil.cer` → **Install Certificate** → **Local Machine** →
+   **Place all certificates in the following store** → **Trusted People**.
+3. Double-click the `.msix` file and select **Install**. Windows should now recognize the
+   publisher and install without a certificate warning.
 
 ## Contributing
 

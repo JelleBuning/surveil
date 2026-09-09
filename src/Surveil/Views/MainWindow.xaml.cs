@@ -51,6 +51,8 @@ public sealed partial class MainWindow
         ViewModel.Cameras.CollectionChanged += OnCamerasChanged;
 
         Closed += OnWindowClosed;
+
+        TaskBarIcon.ForceCreate();
     }
 
     private void OnCamerasChanged(object? sender, NotifyCollectionChangedEventArgs e)

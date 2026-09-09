@@ -13,10 +13,14 @@
 		<Nullable>enable</Nullable>
 		<HasPackageAndPublishMenuSuites>true</HasPackageAndPublishMenuSuites>
 		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+		<PackageCertificateThumbprint>14388DA69AEF54A81F72B91ACEB9AB18DE735978</PackageCertificateThumbprint>
+		<AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
 	</PropertyGroup>
 	
 	<ItemGroup>
-		<Content Include="Assets\*" />
+		<Content Include="Assets\*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -38,10 +42,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Surveil.Core\Surveil.Core.csproj" />
-	</ItemGroup>
-
-	<ItemGroup>
 	  <Folder Include="Views\" />
 	</ItemGroup>
 
@@ -52,6 +52,10 @@
 		<Content Include="appsettings.*.json" Exclude="appsettings.example.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\Surveil.Core\Surveil.Core.csproj" />
 	</ItemGroup>
 
 	<PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">

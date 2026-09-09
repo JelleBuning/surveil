@@ -17,7 +17,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="0"/>
         </Grid.RowDefinitions>
 
         <TitleBar x:Name="AppTitleBar"
@@ -46,8 +45,7 @@
 
         <notifyIcon:TaskbarIcon
             x:Name="TaskBarIcon"
-            Grid.Row="2"
-            ToolTipText="Unifi Protect Camera Client"
+            ToolTipText="Surveil"
             IconSource="/Assets/tray-icon.ico"
             LeftClickCommand="{Binding LeftClickCommand}"
             x:FieldModifier="public" />
