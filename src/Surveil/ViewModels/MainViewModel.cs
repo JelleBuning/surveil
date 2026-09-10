@@ -107,8 +107,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // that have no End timestamp yet (ring is starting, not ending). The integration
     // API at /proxy/protect/integration emits ring events as Update, not Add.
     private static bool IsNotifiableEvent(ProtectEvent @event) =>
-        @event.UpdateType == ProtectEventUpdateType.Add ||
-        @event is RingEvent { End: null };
+        @event.UpdateType == ProtectEventUpdateType.Add || @event is RingEvent { End: null };
 
     [RelayCommand]
     public void LeftClick() => _mainWindow.BringToFront();

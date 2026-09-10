@@ -85,6 +85,7 @@ public partial class App
             _mainWindow.ShowInTaskbar();
 
             AppNotificationManager.Default.NotificationInvoked += (_, _) => _mainWindow.ShowFromBackground();
+            AppNotificationManager.Default.Register();
         }
         catch (Exception ex)
         {
