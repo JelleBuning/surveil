@@ -105,16 +105,16 @@ public partial class App
 
         if (_mainWindow is null || _isShowingErrorDialog) return;
 
+        _isShowingErrorDialog = true;
         _mainWindow.DispatcherQueue.TryEnqueue(async () => await ShowErrorDialogAsync());
     }
 
     private async Task ShowErrorDialogAsync()
     {
-        if (_mainWindow?.Content?.XamlRoot is null) return;
-
-        _isShowingErrorDialog = true;
         try
         {
+            if (_mainWindow?.Content?.XamlRoot is null) return;
+
             var dialog = new ContentDialog
             {
                 Title = "Something went wrong",
@@ -124,6 +124,10 @@ public partial class App
             };
 
             await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[App] Failed to show error dialog: {ex.Message}");
         }
         finally
         {

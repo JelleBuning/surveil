@@ -49,7 +49,9 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
         _dispatcherQueue = dispatcherQueue;
 
         var snapshotPath = options.Value.SnapshotPath
-            ?? Path.Combine(AppContext.BaseDirectory, "snapshots", "snapshot.jpg");
+            ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Surveil", "snapshots", "snapshot.jpg");
         _snapshotService = new SnapshotService(snapshotPath);
 
         _ = StartStreamAsync(camera, _cts.Token);
