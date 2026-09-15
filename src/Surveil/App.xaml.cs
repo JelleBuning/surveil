@@ -14,6 +14,7 @@ using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Infrastructure.Http;
 using Surveil.Infrastructure.Settings;
+using Surveil.Infrastructure.Startup;
 using Surveil.Infrastructure.WebSocket;
 using Surveil.Services;
 using Surveil.Services.Interfaces;
@@ -70,6 +71,7 @@ public partial class App
             builder.Services.AddSingleton<IAppSettingsRepository>(_ => settingsRepo);
             builder.Services.AddSingleton(appSettings);
             builder.Services.AddSingleton<ISettingsChangeNotifier, SettingsChangeNotifier>();
+            builder.Services.AddSingleton<IStartupTaskService, WindowsStartupTaskService>();
 
             builder.Services.AddSingleton<ICameraProvider, ReloadableCameraProvider>();
             builder.Services.AddSingleton<IProtectEventStream, ProtectEventStream>();
@@ -82,7 +84,9 @@ public partial class App
             Ioc.Default.ConfigureServices(host.Services);
 
             _mainWindow = host.Services.GetRequiredService<MainWindow>();
-            _mainWindow.ShowInTaskbar();
+
+            if (activationArgs.Kind != ExtendedActivationKind.StartupTask)
+                _mainWindow.ShowInTaskbar();
 
             AppNotificationManager.Default.NotificationInvoked += (_, _) => _mainWindow.ShowFromBackground();
             AppNotificationManager.Default.Register();
