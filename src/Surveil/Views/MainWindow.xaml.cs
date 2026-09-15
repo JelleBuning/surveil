@@ -24,6 +24,8 @@ public sealed partial class MainWindow
 
     public MainViewModel ViewModel { get; }
 
+    private bool _isExiting;
+
     public MainWindow(
         ICameraProvider apiClient,
         IProtectEventStream eventStream,
@@ -51,6 +53,7 @@ public sealed partial class MainWindow
         ViewModel.Cameras.CollectionChanged += OnCamerasChanged;
 
         Closed += OnWindowClosed;
+        ExitMenuItem.Command = ViewModel.ExitCommand;
 
         TaskBarIcon.ForceCreate();
     }
@@ -102,8 +105,19 @@ public sealed partial class MainWindow
 
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
+        if (_isExiting) return;
+
         args.Handled = true;
         this.Hide();
+    }
+
+    public void ExitApplication()
+    {
+        _isExiting = true;
+        this.Hide();
+        ViewModel.Dispose();
+        TaskBarIcon.Dispose();
+        Microsoft.UI.Xaml.Application.Current.Exit();
     }
 
     private void ResizeAndCenter()

@@ -112,6 +112,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     public void LeftClick() => _mainWindow.BringToFront();
 
+    [RelayCommand]
+    public void Exit() => _mainWindow.ExitApplication();
+
     public void Dispose()
     {
         _settingsNotifier.SettingsChanged -= OnSettingsChanged;
