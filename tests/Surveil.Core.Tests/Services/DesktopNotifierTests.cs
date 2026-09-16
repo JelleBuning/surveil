@@ -36,5 +36,7 @@ public sealed class DesktopNotifierTests
         var notifier = CreateNotifier();
 
         notifier.Notify(_event, "Front Door");
+
+        _sender.Verify(s => s.Notify("Doorbell ring (Front Door)", null), Times.Once());
     }
 }

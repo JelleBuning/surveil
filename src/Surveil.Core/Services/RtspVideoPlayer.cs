@@ -9,8 +9,7 @@ public sealed class RtspVideoPlayer : IDisposable
     private const int ReconnectIdle = 0;
     private const int ReconnectScheduled = 1;
 
-    private static readonly TimeSpan ConnectedStatusDelay = TimeSpan.FromMilliseconds(1500);
-    private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ReconnectDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly string _url;
     private readonly IVlcPlayerFactory _factory;
@@ -20,7 +19,6 @@ public sealed class RtspVideoPlayer : IDisposable
     private bool _stopped;
     private bool _disposed;
     private int _reconnectPending = ReconnectIdle;
-    private DateTime _connectingStart;
 
     public event EventHandler<VideoFrame>? FrameReady;
     public event EventHandler<string>? StatusChanged;
@@ -72,7 +70,6 @@ public sealed class RtspVideoPlayer : IDisposable
         {
             if (_stopped || _disposed) return;
 
-            _connectingStart = DateTime.UtcNow;
             StatusChanged?.Invoke(this, "Connecting...");
 
             var handle = _factory.Create(_url, msg => StatusChanged?.Invoke(this, msg));
@@ -121,18 +118,7 @@ public sealed class RtspVideoPlayer : IDisposable
 
     private void OnHandlePlaying(object? sender, EventArgs e)
     {
-        var token = _cts.Token;
-        Task.Run(async () =>
-        {
-            try
-            {
-                var remaining = ConnectedStatusDelay - (DateTime.UtcNow - _connectingStart);
-                if (remaining > TimeSpan.Zero)
-                    await Task.Delay(remaining, token);
-                StatusChanged?.Invoke(this, "Connected");
-            }
-            catch (OperationCanceledException) { }
-        }, token);
+        StatusChanged?.Invoke(this, "Connected");
     }
 
     private void TearDownPlayerLocked()

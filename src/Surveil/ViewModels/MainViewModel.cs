@@ -94,7 +94,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void LeftClick() => _mainWindow.BringToFront();
+    private void LeftClick() => _mainWindow.ShowFromBackground();
 
     [RelayCommand]
     private void Exit() => _mainWindow.ExitApplication();

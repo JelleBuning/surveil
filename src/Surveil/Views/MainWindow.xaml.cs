@@ -56,10 +56,16 @@ public sealed partial class MainWindow
 
     public void BringToFront()
     {
+        var handle = WindowNative.GetWindowHandle(this);
+
         this.Show();
         this.ShowInTaskbar();
+
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+            presenter.Restore();
+
         Activate();
-        SetForegroundWindow(WindowNative.GetWindowHandle(this));
+        SetForegroundWindow(handle);
     }
 
     public void ShowFromBackground() => DispatcherQueue.TryEnqueue(BringToFront);

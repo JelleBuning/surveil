@@ -47,15 +47,16 @@ public sealed partial class App
                 return;
             }
 
-            keyInstance.Activated += OnActivated;
-
             var services = new ServiceCollection();
             await AddAppServicesAsync(services);
             var provider = services.BuildServiceProvider();
 
             Ioc.Default.ConfigureServices(provider);
-            
+
             _mainWindow = provider.GetRequiredService<MainWindow>();
+
+            keyInstance.Activated += OnActivated;
+
             if (activationArgs.Kind != ExtendedActivationKind.StartupTask)
                 _mainWindow.BringToFront();
 

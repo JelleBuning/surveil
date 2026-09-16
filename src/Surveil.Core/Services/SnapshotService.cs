@@ -9,8 +9,9 @@ namespace Surveil.Services;
 
 public sealed class SnapshotService : IDisposable
 {
-    private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(5);
     private const double HeroAspectRatio = 16.0 / 9.0;
+
+    private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(5);
 
     private readonly string _snapshotPath;
     private readonly string _heroPath;

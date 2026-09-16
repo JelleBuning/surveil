@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -13,6 +14,7 @@ public sealed class ReloadableCameraProvider : ICameraProvider
     private readonly Lock _lock = new();
     private readonly IReadOnlyList<ICameraProviderFactory> _factories;
     private ICameraProvider _current;
+    private AppSettings _currentSettings;
 
     public ReloadableCameraProvider(
         AppSettings initialSettings,
@@ -20,12 +22,23 @@ public sealed class ReloadableCameraProvider : ICameraProvider
         IEnumerable<ICameraProviderFactory> factories)
     {
         _factories = factories.ToList();
+        _currentSettings = initialSettings;
         _current = Build(initialSettings);
 
         notifier.SettingsChanged += settings =>
         {
+            ICameraProvider? previous = null;
+
             lock (_lock)
+            {
+                if (settings == _currentSettings) return;
+
+                previous = _current;
+                _currentSettings = settings;
                 _current = Build(settings);
+            }
+
+            (previous as IDisposable)?.Dispose();
         };
     }
 

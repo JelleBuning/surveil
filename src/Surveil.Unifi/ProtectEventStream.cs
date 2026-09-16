@@ -55,14 +55,20 @@ public sealed class ProtectEventStream : ICameraEventStream
 
     private void OnSettingsChanged(AppSettings settings)
     {
+        var newOptions = new UnifiProtectOptions
+        {
+            BaseUrl = settings.UnifiProtect.BaseUrl,
+            ApiKey = settings.UnifiProtect.ApiKey
+        };
+
+        bool changed;
         lock (_optionsLock)
         {
-            _options = new UnifiProtectOptions
-            {
-                BaseUrl = settings.UnifiProtect.BaseUrl,
-                ApiKey = settings.UnifiProtect.ApiKey
-            };
+            changed = newOptions.BaseUrl != _options.BaseUrl || newOptions.ApiKey != _options.ApiKey;
+            _options = newOptions;
         }
+
+        if (!changed) return;
 
         var previousCts = Interlocked.Exchange(ref _reconnectCts, new CancellationTokenSource());
         previousCts.Cancel();
@@ -255,7 +261,7 @@ public sealed class ProtectEventStream : ICameraEventStream
         catch (Exception ex)
         {
             Debug.WriteLine($"[ProtectEventStream] Parse error: {ex.Message}");
-            Debug.WriteLine($"[ProtectEventStream] Raw JSON: {json[..Math.Min(json.Length, 500)]}");
+            Debug.WriteLine($"[ProtectEventStream] Raw JSON: {UnifiProtectApiClient.Truncate(json, 500)}");
             return null;
         }
     }

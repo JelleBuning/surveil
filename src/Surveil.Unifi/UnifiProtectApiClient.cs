@@ -11,7 +11,7 @@ using Surveil.Domain.Cameras;
 
 namespace Surveil.Unifi;
 
-public sealed class UnifiProtectApiClient : ICameraProvider
+public sealed class UnifiProtectApiClient : ICameraProvider, IDisposable
 {
     private const int BodyPreviewLength = 500;
     private const int ErrorBodyPreviewLength = 300;
@@ -24,6 +24,7 @@ public sealed class UnifiProtectApiClient : ICameraProvider
 
     private readonly HttpClient _http;
     private readonly string _reachableHost;
+    private readonly bool _ownsHttpClient;
 
     public UnifiProtectApiClient(IOptions<UnifiProtectOptions> options)
     {
@@ -42,12 +43,19 @@ public sealed class UnifiProtectApiClient : ICameraProvider
         _http.DefaultRequestHeaders.Add("X-API-KEY", opts.ApiKey);
 
         _reachableHost = new Uri(opts.BaseUrl).Host;
+        _ownsHttpClient = true;
     }
 
     internal UnifiProtectApiClient(HttpClient httpClient, string? reachableHost = null)
     {
         _http = httpClient;
         _reachableHost = reachableHost ?? httpClient.BaseAddress?.Host ?? string.Empty;
+    }
+
+    public void Dispose()
+    {
+        if (_ownsHttpClient)
+            _http.Dispose();
     }
 
     public async Task<IReadOnlyList<Camera>> GetCamerasAsync(CancellationToken ct = default)
@@ -120,10 +128,12 @@ public sealed class UnifiProtectApiClient : ICameraProvider
 
         var body = string.Empty;
         try { body = await response.Content.ReadAsStringAsync(ct); }
-        catch { }
+        catch
+        {
+            // ignored
+        }
 
-        if (body.Length > ErrorBodyPreviewLength)
-            body = Truncate(body, ErrorBodyPreviewLength) + "…";
+        body = Truncate(body, ErrorBodyPreviewLength);
 
         Debug.WriteLine($"[UnifiProtectApiClient] HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {body}");
         throw new HttpRequestException(
@@ -132,8 +142,8 @@ public sealed class UnifiProtectApiClient : ICameraProvider
             statusCode: response.StatusCode);
     }
 
-    private static string Truncate(string text, int maxLength) =>
-        text.Length <= maxLength ? text : text[..maxLength];
+    internal static string Truncate(string text, int maxLength) =>
+        text.Length <= maxLength ? text : text[..maxLength] + "…";
 
     private sealed record CameraDto(string Id, string Name, string State);
 

@@ -73,7 +73,7 @@ public sealed class ProtectEventStreamTests
     }
 
     [TestMethod]
-    public async Task SubscribeAsync_ConnectFails_RetriesAndYieldsNoEventsAfterCancel()
+    public async Task SubscribeAsync_ConnectFails_RetriesAfterTheBackoffDelay()
     {
         var wsMock = new Mock<IWebSocketConnection>();
         wsMock.SetupGet(w => w.State).Returns(WebSocketState.Closed);
@@ -84,13 +84,14 @@ public sealed class ProtectEventStreamTests
         wsFactoryMock.Setup(f => f.Create(It.IsAny<string>())).Returns(wsMock.Object);
 
         var stream = CreateStream(wsFactoryMock.Object);
-        using var cts = new CancellationTokenSource(200);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
 
         var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
             events.Add(e);
 
         Assert.IsEmpty(events);
+        wsFactoryMock.Verify(f => f.Create(It.IsAny<string>()), Times.AtLeast(2));
     }
 
     [TestMethod]
@@ -157,7 +158,7 @@ public sealed class ProtectEventStreamTests
         wsFactoryMock.Setup(f => f.Create(It.IsAny<string>())).Returns(wsMock.Object);
 
         var stream = CreateStream(wsFactoryMock.Object);
-        using var cts = new CancellationTokenSource(300);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
 
         var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
@@ -165,6 +166,7 @@ public sealed class ProtectEventStreamTests
 
         Assert.IsEmpty(events);
         Assert.IsTrue(receiveCount > 0, "At least one receive call was made");
+        wsFactoryMock.Verify(f => f.Create(It.IsAny<string>()), Times.AtLeast(2));
     }
 
     [TestMethod]

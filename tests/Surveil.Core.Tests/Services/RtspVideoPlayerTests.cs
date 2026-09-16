@@ -1,7 +1,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using Surveil.Services;
@@ -42,8 +41,6 @@ public sealed class RtspVideoPlayerTests
             return handle;
         }
     }
-
-    private static readonly TimeSpan LongerThanTheConnectedStatusDelay = TimeSpan.FromMilliseconds(2500);
 
     private readonly TestVlcHandle _handle = new();
     private readonly TestVlcFactory _factory;
@@ -170,28 +167,14 @@ public sealed class RtspVideoPlayerTests
     }
 
     [TestMethod]
-    public async Task Playing_AfterTheConnectedStatusDelay_RaisesConnectedStatus()
+    public void Playing_RaisesConnectedStatusImmediately()
     {
         var statuses = CaptureStatuses();
 
         _player.Start();
         _handle.RaisePlaying();
-        await Task.Delay(LongerThanTheConnectedStatusDelay);
 
-        Assert.Contains("Connected", statuses);
-    }
-
-    [TestMethod]
-    public async Task Playing_WhenStoppedBeforeTheDelayElapses_NeverRaisesConnectedStatus()
-    {
-        var statuses = CaptureStatuses();
-
-        _player.Start();
-        _handle.RaisePlaying();
-        _player.Stop();
-        await Task.Delay(LongerThanTheConnectedStatusDelay);
-
-        Assert.DoesNotContain("Connected", statuses);
+        Assert.AreEqual("Connected", statuses[^1]);
     }
 
     [TestMethod]
