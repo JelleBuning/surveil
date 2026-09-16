@@ -1,12 +1,10 @@
 using H.NotifyIcon;
-using Microsoft.Extensions.Options;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using System.Collections.Specialized;
 using System.Runtime.InteropServices;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Domain.Cameras;
 using Surveil.Services.Interfaces;
@@ -28,10 +26,9 @@ public sealed partial class MainWindow
 
     public MainWindow(
         ICameraProvider apiClient,
-        IProtectEventStream eventStream,
+        ICameraEventStream eventStream,
         IDesktopNotifier notifier,
-        ISettingsChangeNotifier settingsNotifier,
-        IOptions<EventNotificationSettings> eventSettings)
+        ISettingsChangeNotifier settingsNotifier)
     {
         InitializeComponent();
 
@@ -46,7 +43,6 @@ public sealed partial class MainWindow
             eventStream,
             notifier,
             settingsNotifier,
-            eventSettings.Value,
             DispatcherQueue.GetForCurrentThread());
         RootGrid.DataContext = ViewModel;
 

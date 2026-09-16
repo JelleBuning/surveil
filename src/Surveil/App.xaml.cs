@@ -1,23 +1,23 @@
 using CommunityToolkit.Mvvm.DependencyInjection;
 using H.NotifyIcon;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
+using Surveil.Application.Settings;
 using Surveil.Infrastructure.Http;
 using Surveil.Infrastructure.Settings;
 using Surveil.Infrastructure.Startup;
-using Surveil.Infrastructure.WebSocket;
 using Surveil.Services;
 using Surveil.Services.Interfaces;
+using Surveil.Unifi;
 using Surveil.ViewModels;
 using Surveil.Views;
 
@@ -30,10 +30,10 @@ public partial class App
 
     protected override async void OnLaunched(LaunchActivatedEventArgs _)
     {
-        UnhandledException += OnUnhandledException;
-
         try
         {
+            UnhandledException += OnUnhandledException;
+
             var activationArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
             var keyInstance = AppInstance.FindOrRegisterForKey("Surveil");
 
@@ -46,44 +46,37 @@ public partial class App
 
             keyInstance.Activated += OnActivated;
 
-            var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
-            {
-                ContentRootPath = AppContext.BaseDirectory
-            });
-
-            // Load persisted settings and let them override appsettings.json values
             var settingsRepo = new JsonAppSettingsRepository();
             var appSettings  = await settingsRepo.LoadAsync();
 
-            if (!string.IsNullOrEmpty(appSettings.UnifiProtect.BaseUrl))
-            {
-                builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            var services = new ServiceCollection();
+
+            services.AddSingleton(new SnapshotOptions(appSettings.UnifiProtect.SnapshotPath ?? DefaultSnapshotPath));
+            services.AddSingleton(Options.Create(new EventNotificationSettings()));
+            services.AddSingleton(Options.Create(new UnifiProtectOptions
                 {
-                    [$"{UnifiProtectOptions.SectionName}:BaseUrl"]      = appSettings.UnifiProtect.BaseUrl,
-                    [$"{UnifiProtectOptions.SectionName}:ApiKey"]       = appSettings.UnifiProtect.ApiKey,
-                    [$"{UnifiProtectOptions.SectionName}:SnapshotPath"] = appSettings.UnifiProtect.SnapshotPath,
-                });
-            }
+                    BaseUrl = appSettings.UnifiProtect.BaseUrl,
+                    ApiKey  = appSettings.UnifiProtect.ApiKey
+                }
+            ));
+            
+            services.AddSingleton<IAppSettingsRepository>(settingsRepo);
+            services.AddSingleton(appSettings);
+            services.AddSingleton<ISettingsChangeNotifier, SettingsChangeNotifier>();
+            services.AddSingleton<IStartupTaskService, WindowsStartupTaskService>();
 
-            builder.Services.Configure<UnifiProtectOptions>(builder.Configuration.GetSection(UnifiProtectOptions.SectionName));
-            builder.Services.Configure<EventNotificationSettings>(builder.Configuration.GetSection(EventNotificationSettings.SectionName));
+            services.AddSingleton<ICameraProviderFactory, UnifiCameraProviderFactory>();
+            services.AddSingleton<ICameraProvider, ReloadableCameraProvider>();
+            services.AddSingleton<ICameraEventStream, ProtectEventStream>();
+            services.AddTransient<IDesktopNotifier, DesktopNotifier>();
+            services.AddTransient<SettingsViewModel>();
 
-            builder.Services.AddSingleton<IAppSettingsRepository>(_ => settingsRepo);
-            builder.Services.AddSingleton(appSettings);
-            builder.Services.AddSingleton<ISettingsChangeNotifier, SettingsChangeNotifier>();
-            builder.Services.AddSingleton<IStartupTaskService, WindowsStartupTaskService>();
+            services.AddSingleton<MainWindow>();
 
-            builder.Services.AddSingleton<ICameraProvider, ReloadableCameraProvider>();
-            builder.Services.AddSingleton<IProtectEventStream, ProtectEventStream>();
-            builder.Services.AddTransient<IDesktopNotifier, DesktopNotifier>();
-            builder.Services.AddTransient<SettingsViewModel>();
+            var provider = services.BuildServiceProvider();
+            Ioc.Default.ConfigureServices(provider);
 
-            builder.Services.AddSingleton<MainWindow>();
-
-            var host = builder.Build();
-            Ioc.Default.ConfigureServices(host.Services);
-
-            _mainWindow = host.Services.GetRequiredService<MainWindow>();
+            _mainWindow = provider.GetRequiredService<MainWindow>();
 
             if (activationArgs.Kind != ExtendedActivationKind.StartupTask)
                 _mainWindow.ShowInTaskbar();
@@ -93,9 +86,11 @@ public partial class App
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"App startup failed: {ex.Message}");
+            Debug.WriteLine($"App startup failed: {ex.Message}");
         }
     }
+
+    private static string DefaultSnapshotPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Surveil", "snapshots", "snapshot.jpg");
 
     private void OnActivated(object? sender, AppActivationArguments args)
     {
@@ -106,7 +101,7 @@ public partial class App
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         e.Handled = true;
-        System.Diagnostics.Debug.WriteLine($"[App] Unhandled exception: {e.Exception}");
+        Debug.WriteLine($"[App] Unhandled exception: {e.Exception}");
 
         if (_mainWindow is null || _isShowingErrorDialog) return;
 
@@ -132,7 +127,7 @@ public partial class App
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[App] Failed to show error dialog: {ex.Message}");
+            Debug.WriteLine($"[App] Failed to show error dialog: {ex.Message}");
         }
         finally
         {

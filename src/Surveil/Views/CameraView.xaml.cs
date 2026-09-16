@@ -1,8 +1,7 @@
 using CommunityToolkit.Mvvm.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Surveil.Application.Options;
+using Surveil.Application.Settings;
 using Surveil.Application.Ports;
 using Surveil.Domain.Cameras;
 using Surveil.ViewModels;
@@ -25,9 +24,9 @@ public sealed partial class CameraView : Page
         if (e.Parameter is not Camera camera) return;
 
         var apiClient = Ioc.Default.GetRequiredService<ICameraProvider>();
-        var options   = Ioc.Default.GetRequiredService<IOptions<UnifiProtectOptions>>();
+        var snapshot  = Ioc.Default.GetRequiredService<SnapshotOptions>();
 
-        _viewModel = new CameraViewModel(camera, apiClient, options, DispatcherQueue);
+        _viewModel = new CameraViewModel(camera, apiClient, snapshot, DispatcherQueue);
         DataContext = _viewModel;
     }
 

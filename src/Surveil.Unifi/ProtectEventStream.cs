@@ -9,33 +9,36 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Application.Settings;
 using Surveil.Domain.Events;
+using Surveil.Unifi.WebSocket;
 
-namespace Surveil.Infrastructure.WebSocket;
+namespace Surveil.Unifi;
 
-public sealed class ProtectEventStream : IProtectEventStream
+public sealed class ProtectEventStream : ICameraEventStream
 {
-    private readonly object _optionsLock = new();
+    private readonly Lock _optionsLock = new();
     private UnifiProtectOptions _options;
     private readonly IWebSocketFactory _wsFactory;
+    private readonly EventNotificationSettings _eventSettings;
 
-    // Swapped out (and the old one cancelled) whenever settings change, so an in-flight
-    // connect/receive aborts and the retry loop immediately picks up fresh settings
-    // instead of waiting for a natural disconnect.
     private CancellationTokenSource _reconnectCts = new();
 
-    public ProtectEventStream(IOptions<UnifiProtectOptions> options, ISettingsChangeNotifier notifier)
-        : this(options, new ClientWebSocketFactory(), notifier) { }
+    public ProtectEventStream(
+        IOptions<UnifiProtectOptions> options,
+        IOptions<EventNotificationSettings> eventSettings,
+        ISettingsChangeNotifier notifier)
+        : this(options, new ClientWebSocketFactory(), eventSettings.Value, notifier) { }
 
     internal ProtectEventStream(
         IOptions<UnifiProtectOptions> options,
         IWebSocketFactory wsFactory,
+        EventNotificationSettings eventSettings,
         ISettingsChangeNotifier? notifier = null)
     {
         _options = options.Value;
+        _eventSettings = eventSettings;
         _wsFactory = wsFactory;
 
         if (notifier is not null)
@@ -48,9 +51,8 @@ public sealed class ProtectEventStream : IProtectEventStream
         {
             _options = new UnifiProtectOptions
             {
-                BaseUrl      = settings.UnifiProtect.BaseUrl,
-                ApiKey       = settings.UnifiProtect.ApiKey,
-                SnapshotPath = settings.UnifiProtect.SnapshotPath
+                BaseUrl = settings.UnifiProtect.BaseUrl,
+                ApiKey  = settings.UnifiProtect.ApiKey
             };
         }
 
@@ -64,7 +66,7 @@ public sealed class ProtectEventStream : IProtectEventStream
         get { lock (_optionsLock) return _options; }
     }
 
-    public async IAsyncEnumerable<ProtectEvent> SubscribeAsync(
+    public async IAsyncEnumerable<CameraEvent> SubscribeAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var backoffMs = 1_000;
@@ -108,7 +110,10 @@ public sealed class ProtectEventStream : IProtectEventStream
             if (connected)
             {
                 await foreach (var ev in ReceiveAsync(ws, token, ct))
-                    yield return ev;
+                {
+                    if (ShouldEmit(ev))
+                        yield return ToCameraEvent(ev);
+                }
 
                 Debug.WriteLine($"[ProtectEventStream] Disconnected (ws state: {ws.State}), retrying in {backoffMs}ms");
             }
@@ -126,10 +131,17 @@ public sealed class ProtectEventStream : IProtectEventStream
         }
     }
 
+    private bool ShouldEmit(ProtectEvent @event) =>
+        IsNotifiable(@event) && _eventSettings.IsEnabled(@event);
+
+    internal static bool IsNotifiable(ProtectEvent @event) =>
+        @event.UpdateType == ProtectEventUpdateType.Add || @event is RingEvent { End: null };
+
+    internal static CameraEvent ToCameraEvent(ProtectEvent @event) =>
+        new(@event.Id, @event.DeviceId, ProtectEventDescriber.Describe(@event));
+
     internal Uri BuildWebSocketUri()
     {
-        // BaseUrl is the console address only; the integration API path is fixed,
-        // so the WebSocket URL is wss://host/proxy/protect/integration/v1/subscribe/events.
         var baseUri = new Uri($"{CurrentOptions.BaseUrl.TrimEnd('/')}/{UnifiProtectOptions.ApiPath}/");
         var builder = new UriBuilder(baseUri)
         {
@@ -233,15 +245,20 @@ public sealed class ProtectEventStream : IProtectEventStream
                 "sensorSmokeTest"       => new SensorSmokeTestEvent(id, start, end, device, updateType),
 
                 // Sensors — with metadata
-                "sensorAlarm"           => ParseSensorAlarm(id, start, end, device, updateType, item),
-                "sensorOpened"          => ParseSensorMountType<SensorOpenedEvent>(id, start, end, device, updateType, item,
-                                              (i, s, e, d, u, m) => new SensorOpenedEvent(i, s, e, d, u, m)),
-                "sensorClosed"          => ParseSensorMountType<SensorClosedEvent>(id, start, end, device, updateType, item,
-                                              (i, s, e, d, u, m) => new SensorClosedEvent(i, s, e, d, u, m)),
-                "sensorWaterLeak"       => ParseSensorMountType<SensorWaterLeakEvent>(id, start, end, device, updateType, item,
-                                              (i, s, e, d, u, m) => new SensorWaterLeakEvent(i, s, e, d, u, m)),
-                "sensorBatteryLow"      => ParseSensorBatteryLow(id, start, end, device, updateType, item),
-                "sensorExtremeValues"   => ParseSensorExtremeValues(id, start, end, device, updateType, item),
+                "sensorAlarm"           => new SensorAlarmEvent(id, start, end, device, updateType,
+                                              MetadataText(item, "alarmType")),
+                "sensorOpened"          => new SensorOpenedEvent(id, start, end, device, updateType,
+                                              MetadataText(item, "sensorMountType")),
+                "sensorClosed"          => new SensorClosedEvent(id, start, end, device, updateType,
+                                              MetadataText(item, "sensorMountType")),
+                "sensorWaterLeak"       => new SensorWaterLeakEvent(id, start, end, device, updateType,
+                                              MetadataText(item, "sensorMountType")),
+                "sensorBatteryLow"      => new SensorBatteryLowEvent(id, start, end, device, updateType,
+                                              MetadataNumber(item, "sensorBatteryPercentage", "number")),
+                "sensorExtremeValues"   => new SensorExtremeValuesEvent(id, start, end, device, updateType,
+                                              MetadataText(item, "sensorType"),
+                                              MetadataNumber(item, "sensorValue", "text"),
+                                              MetadataText(item, "status")),
 
                 _                       => new UnknownEvent(id, type, start, end, device, updateType)
             };
@@ -254,57 +271,21 @@ public sealed class ProtectEventStream : IProtectEventStream
         }
     }
 
-    private static SensorAlarmEvent ParseSensorAlarm(string id, long start, long? end, string device,
-        ProtectEventUpdateType updateType, JsonElement item)
-    {
-        var alarmType = item.TryGetProperty("metadata", out var meta)
-                        && meta.TryGetProperty("alarmType", out var at)
-                        && at.TryGetProperty("text", out var txt)
-            ? txt.GetString() ?? string.Empty
+    private static string MetadataText(JsonElement item, string field) =>
+        TryGetMetadataValue(item, field, "text", out var value)
+            ? value.GetString() ?? string.Empty
             : string.Empty;
-        return new SensorAlarmEvent(id, start, end, device, updateType, alarmType);
-    }
 
-    private static T ParseSensorMountType<T>(string id, long start, long? end, string device,
-        ProtectEventUpdateType updateType, JsonElement item,
-        Func<string, long, long?, string, ProtectEventUpdateType, string, T> factory)
-    {
-        var mountType = item.TryGetProperty("metadata", out var meta)
-                        && meta.TryGetProperty("sensorMountType", out var mt)
-                        && mt.TryGetProperty("text", out var txt)
-            ? txt.GetString() ?? string.Empty
-            : string.Empty;
-        return factory(id, start, end, device, updateType, mountType);
-    }
-
-    private static SensorBatteryLowEvent ParseSensorBatteryLow(string id, long start, long? end, string device,
-        ProtectEventUpdateType updateType, JsonElement item)
-    {
-        var pct = item.TryGetProperty("metadata", out var meta)
-                  && meta.TryGetProperty("sensorBatteryPercentage", out var bp)
-                  && bp.TryGetProperty("number", out var num)
-            ? num.GetDouble()
+    private static double MetadataNumber(JsonElement item, string field, string valueProperty) =>
+        TryGetMetadataValue(item, field, valueProperty, out var value)
+            ? value.GetDouble()
             : 0d;
-        return new SensorBatteryLowEvent(id, start, end, device, updateType, pct);
-    }
 
-    private static SensorExtremeValuesEvent ParseSensorExtremeValues(string id, long start, long? end, string device,
-        ProtectEventUpdateType updateType, JsonElement item)
+    private static bool TryGetMetadataValue(JsonElement item, string field, string valueProperty, out JsonElement value)
     {
-        var sensorType  = string.Empty;
-        var sensorValue = 0d;
-        var status      = string.Empty;
-
-        if (item.TryGetProperty("metadata", out var meta))
-        {
-            if (meta.TryGetProperty("sensorType", out var st) && st.TryGetProperty("text", out var stTxt))
-                sensorType = stTxt.GetString() ?? string.Empty;
-            if (meta.TryGetProperty("sensorValue", out var sv) && sv.TryGetProperty("text", out var svTxt))
-                sensorValue = svTxt.GetDouble();
-            if (meta.TryGetProperty("status", out var s) && s.TryGetProperty("text", out var sTxt))
-                status = sTxt.GetString() ?? string.Empty;
-        }
-
-        return new SensorExtremeValuesEvent(id, start, end, device, updateType, sensorType, sensorValue, status);
+        value = default;
+        return item.TryGetProperty("metadata", out var metadata)
+               && metadata.TryGetProperty(field, out var fieldElement)
+               && fieldElement.TryGetProperty(valueProperty, out value);
     }
 }

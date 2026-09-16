@@ -47,16 +47,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Content Include="appsettings.json">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-		<Content Include="appsettings.*.json" Exclude="appsettings.example.json">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-	</ItemGroup>
-
-	<ItemGroup>
 	  <ProjectReference Include="..\Surveil.Core\Surveil.Core.csproj" />
+	  <ProjectReference Include="..\Surveil.Unifi\Surveil.Unifi.csproj" />
 	</ItemGroup>
 
 	<PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">

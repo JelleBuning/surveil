@@ -1,16 +1,7 @@
-using Surveil.Domain.Events;
+namespace Surveil.Unifi;
 
-namespace Surveil.Application.Options;
-
-/// <summary>
-/// Controls which Protect event types trigger a desktop notification.
-/// All events default to disabled; only <see cref="Ring"/> is on by default.
-/// Bind from appsettings.json under the "EventNotifications" section.
-/// </summary>
 public sealed class EventNotificationSettings
 {
-    public const string SectionName = "EventNotifications";
-
     // ── Camera ────────────────────────────────────────────────────────────────
     public bool Motion                  { get; init; } = false;
     public bool SmartDetectZone         { get; init; } = false;

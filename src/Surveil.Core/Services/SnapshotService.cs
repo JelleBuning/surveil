@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,7 +28,7 @@ public sealed class SnapshotService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[SnapshotService] Snapshot directory unavailable, snapshots disabled: {ex.Message}");
+            Debug.WriteLine($"[SnapshotService] Snapshot directory unavailable, snapshots disabled: {ex.Message}");
         }
     }
 
@@ -52,7 +53,7 @@ public sealed class SnapshotService : IDisposable
         _ = Task.Run(async () =>
         {
             try { await SaveAsync(width, height, copy); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Snapshot failed: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"Snapshot failed: {ex.Message}"); }
             finally { Interlocked.Exchange(ref _saving, 0); }
         });
     }

@@ -4,7 +4,7 @@ using Surveil.Domain.Events;
 
 namespace Surveil.Application.Ports;
 
-public interface IProtectEventStream
+public interface ICameraEventStream
 {
-    IAsyncEnumerable<ProtectEvent> SubscribeAsync(CancellationToken ct = default);
+    IAsyncEnumerable<CameraEvent> SubscribeAsync(CancellationToken ct = default);
 }

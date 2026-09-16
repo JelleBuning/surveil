@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace Surveil.Infrastructure.WebSocket;
+namespace Surveil.Unifi.WebSocket;
 
 [ExcludeFromCodeCoverage]
 internal sealed class ClientWebSocketFactory : IWebSocketFactory

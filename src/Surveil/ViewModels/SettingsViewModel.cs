@@ -10,11 +10,9 @@ using Surveil.Application.Settings;
 
 namespace Surveil.ViewModels;
 
-public class SettingsViewModel : ObservableObject
+public sealed class SettingsViewModel : ObservableObject
 {
-    private const string LaunchOnStartupDefaultDescription =
-        "Start Surveil automatically when you sign in to Windows.";
-
+    private const string LaunchOnStartupDefaultDescription = "Start Surveil automatically when you sign in to Windows.";
     private readonly IAppSettingsRepository _repository;
     private readonly ISettingsChangeNotifier _notifier;
     private readonly IStartupTaskService _startupTaskService;
@@ -48,8 +46,7 @@ public class SettingsViewModel : ObservableObject
 
     public bool IsLaunchOnStartupToggleEnabled => StartupStatus.CanUserChange();
 
-    public string LaunchOnStartupDescription =>
-        StartupStatus.GetRestrictionDescription() ?? LaunchOnStartupDefaultDescription;
+    public string LaunchOnStartupDescription => StartupStatus.GetRestrictionDescription() ?? LaunchOnStartupDefaultDescription;
 
     public IReadOnlyList<VideoProviderOption> AvailableProviders { get; } =
     [

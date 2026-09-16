@@ -4,7 +4,7 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Surveil.Infrastructure.WebSocket;
+namespace Surveil.Unifi.WebSocket;
 
 [ExcludeFromCodeCoverage]
 internal sealed class ClientWebSocketWrapper : IWebSocketConnection

@@ -5,17 +5,16 @@ namespace Surveil.Services;
 
 public sealed class VideoFrame : IDisposable
 {
-    private readonly byte[] _pixels;
     private bool _disposed;
 
-    public byte[] Pixels => _pixels;
+    public byte[] Pixels { get; }
     public int Width { get; }
     public int Height { get; }
     public int DataLength { get; }
 
     internal VideoFrame(byte[] pixels, int width, int height, int dataLength)
     {
-        _pixels = pixels;
+        Pixels = pixels;
         Width = width;
         Height = height;
         DataLength = dataLength;
@@ -25,6 +24,6 @@ public sealed class VideoFrame : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        ArrayPool<byte>.Shared.Return(_pixels);
+        ArrayPool<byte>.Shared.Return(Pixels);
     }
 }

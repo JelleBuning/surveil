@@ -50,6 +50,12 @@ dotnet test tests/Surveil.Core.Tests
 dotnet test --filter "FullyQualifiedName~ProtectEventStreamTests.SomeMethod"
 ```
 
+If the MSIX signing certificate is not installed on the machine, `dotnet build Surveil.slnx`
+fails at the packaging step with `SigningCertificateThumbprintNotInStore`. That failure is
+environmental, not a code error. Verify builds with
+`dotnet build Surveil.slnx -p:AppxPackageSigningEnabled=false` in that case, and say plainly that
+packaging was not exercised.
+
 Tests use **MSTest** + **Moq** (`Microsoft.NET.Test.Sdk`, `MSTest.TestFramework`, `MSTest.TestAdapter`, `Moq`), not xUnit/NUnit. Each `Surveil.Core` internal type under test is exposed to the test project via `InternalsVisibleTo` in `Surveil.Core.csproj` (also `InternalsVisibleTo` to `DynamicProxyGenAssembly2` for Moq's dynamic proxies) rather than making everything public.
 
 Package versions are centrally managed in `Directory.Packages.props` (`ManagePackageVersionsCentrally=true`) — never add a `Version` attribute to a `PackageReference` in a `.csproj`; add/bump the version in `Directory.Packages.props` instead.
@@ -66,6 +72,15 @@ Surveil.Core     ← Domain/Application/Infrastructure/Services layers (see belo
 Surveil          ← WinUI 3 host: Views (XAML), ViewModels, composition (App.xaml.cs); depends on Surveil.Core
 Surveil.Unifi    ← (planned) UniFi Protect-specific provider implementation, depends on Surveil.Core's ports
 ```
+
+**What belongs in Core vs. a provider project.** Core owns the capabilities the app offers —
+show a notification, show video, display cameras — and the generic shapes those capabilities
+operate on, including a generic event type. A provider project owns the *details* of each
+capability: its event types, their parsing and wire format, and their wording. UniFi's event
+vocabulary has no place in Core.
+
+Being generic in shape is not sufficient reason to live in Core. If only one provider needs a
+type, it belongs to that provider; promote it to Core when a second provider actually needs it.
 
 The intent going forward: `Surveil.Core` stays provider-agnostic (ports + domain + generic
 services), and each concrete camera/NVR provider gets its own project (starting with
@@ -103,13 +118,43 @@ place services get registered; there's no separate composition-root project.
 
 ## Key conventions
 
+- **No comments. At all.** No inline `//`, no `///` XML doc comments, no `<!-- -->` in XAML, no
+  `// ── Section ──` dividers. Make the code self-explanatory instead; if something genuinely
+  needs explaining, put it in this file or the commit message. Older files still carry XML docs
+  from before this rule — leave them, but do not imitate them in new code.
 - `sealed` on every class not designed for inheritance; `record` for domain entities, settings, and options types (e.g. `Camera`, `RtspsStream`, `ProtectEvent`, `AppSettings`, `VideoProviderOption`).
 - Async methods take a `CancellationToken` where cancellation is meaningful (network/IO calls).
 - Interfaces for anything DI needs to swap or mock (`ICameraProvider`, `IProtectEventStream`, `IAppSettingsRepository`, `ISettingsChangeNotifier`, `IDesktopNotifier`, `IVlcPlayerFactory`) — colocated with their implementation, not in a separate `Interfaces/` folder except the existing `Services/Interfaces/` (don't add new interfaces there; colocate with the concrete class instead, matching the newer `Application/Ports` pattern).
 - Prefer `var` by default; no suppressing nullable warnings.
 - `ImplicitUsings` disabled — write explicit `using` directives.
 
+## UI conventions (WinUI)
+
+Settings UI follows Microsoft's [Guidelines for app settings](https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings):
+build rows with `SettingsCard` / `SettingsExpander` from the Windows Community Toolkit, group
+them under section headers in one scrolling column (**not** tabs), cap the width around
+1000-1100px, apply changes immediately rather than behind a Save button, and explain a disabled
+setting in its card `Description`.
+
+### `SettingsPage.xaml` layout is load-bearing
+
+The nesting there looks redundant and is not. Do not flatten it:
+
+- `ScrollViewer` sets `HorizontalScrollMode="Disabled"`. Without it the ScrollViewer measures its
+  content with unbounded width, the panel sizes to its children instead of stretching, and the
+  page jumps sideways whenever a section is shown or hidden.
+- The width cap lives on an inner `Grid` wrapper, never on the `StackPanel`. `MaxWidth` plus
+  `HorizontalAlignment="Stretch"` centres once available width exceeds `MaxWidth` — that is the
+  intended centring, but only works when the wrapper's width comes from the available space
+  rather than from its children.
+- Gutter padding goes on the outer `Grid`, not the `ScrollViewer`: `ScrollViewer.Padding` only
+  applies reliably to the leading edge, leaving the right side flush against the window.
+
 ## Local secrets / hooks
+
+**Never commit or push.** The user commits their own work. Do not run `git commit`, `git push`
+or `git add`, and do not offer to — report what changed and leave the working tree for them.
+Read-only git (`status`, `diff`, `log`, `show`) is fine.
 
 A `PreToolUse` hook (`.claude/hooks/block-secrets.py`) and a `Stop` hook
 (`.claude/hooks/verify-no-secrets.sh`) already guard against committing secrets in this repo —

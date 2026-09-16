@@ -1,4 +1,4 @@
-namespace Surveil.Infrastructure.WebSocket;
+namespace Surveil.Unifi.WebSocket;
 
 internal interface IWebSocketFactory
 {
