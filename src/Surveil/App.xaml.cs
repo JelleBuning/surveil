@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.DependencyInjection;
-using H.NotifyIcon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.UI.Xaml;
@@ -20,11 +19,15 @@ using Surveil.Services.Interfaces;
 using Surveil.Unifi;
 using Surveil.ViewModels;
 using Surveil.Views;
+using UnhandledExceptionEventArgs = Microsoft.UI.Xaml.UnhandledExceptionEventArgs;
 
 namespace Surveil;
 
-public partial class App
+public sealed partial class App
 {
+    private static string DefaultSnapshotPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Surveil", "snapshots", "snapshot.jpg");
+
     private MainWindow? _mainWindow;
     private bool _isShowingErrorDialog;
 
@@ -44,42 +47,18 @@ public partial class App
                 return;
             }
 
-            keyInstance.Activated += OnActivated;
-
-            var settingsRepo = new JsonAppSettingsRepository();
-            var appSettings  = await settingsRepo.LoadAsync();
-
             var services = new ServiceCollection();
-
-            services.AddSingleton(new SnapshotOptions(appSettings.UnifiProtect.SnapshotPath ?? DefaultSnapshotPath));
-            services.AddSingleton(Options.Create(new EventNotificationSettings()));
-            services.AddSingleton(Options.Create(new UnifiProtectOptions
-                {
-                    BaseUrl = appSettings.UnifiProtect.BaseUrl,
-                    ApiKey  = appSettings.UnifiProtect.ApiKey
-                }
-            ));
-            
-            services.AddSingleton<IAppSettingsRepository>(settingsRepo);
-            services.AddSingleton(appSettings);
-            services.AddSingleton<ISettingsChangeNotifier, SettingsChangeNotifier>();
-            services.AddSingleton<IStartupTaskService, WindowsStartupTaskService>();
-
-            services.AddSingleton<ICameraProviderFactory, UnifiCameraProviderFactory>();
-            services.AddSingleton<ICameraProvider, ReloadableCameraProvider>();
-            services.AddSingleton<ICameraEventStream, ProtectEventStream>();
-            services.AddTransient<IDesktopNotifier, DesktopNotifier>();
-            services.AddTransient<SettingsViewModel>();
-
-            services.AddSingleton<MainWindow>();
-
+            await AddAppServicesAsync(services);
             var provider = services.BuildServiceProvider();
+
             Ioc.Default.ConfigureServices(provider);
 
             _mainWindow = provider.GetRequiredService<MainWindow>();
 
+            keyInstance.Activated += OnActivated;
+
             if (activationArgs.Kind != ExtendedActivationKind.StartupTask)
-                _mainWindow.ShowInTaskbar();
+                _mainWindow.BringToFront();
 
             AppNotificationManager.Default.NotificationInvoked += (_, _) => _mainWindow.ShowFromBackground();
             AppNotificationManager.Default.Register();
@@ -90,15 +69,41 @@ public partial class App
         }
     }
 
-    private static string DefaultSnapshotPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Surveil", "snapshots", "snapshot.jpg");
+    private static async Task AddAppServicesAsync(IServiceCollection services)
+    {
+        var settingsRepository = new JsonAppSettingsRepository();
+        var appSettings = await settingsRepository.LoadAsync();
+
+        services.AddSingleton(new SnapshotOptions(appSettings.UnifiProtect.SnapshotPath ?? DefaultSnapshotPath));
+        services.AddSingleton(Options.Create(new EventNotificationSettings()));
+        services.AddSingleton(Options.Create(new UnifiProtectOptions
+        {
+            BaseUrl = appSettings.UnifiProtect.BaseUrl,
+            ApiKey = appSettings.UnifiProtect.ApiKey
+        }));
+
+        services.AddSingleton<IAppSettingsRepository>(settingsRepository);
+        services.AddSingleton(appSettings);
+        services.AddSingleton<ISettingsChangeNotifier, SettingsChangeNotifier>();
+        services.AddSingleton<IStartupTaskService, WindowsStartupTaskService>();
+
+        services.AddSingleton<ICameraProviderFactory, UnifiCameraProviderFactory>();
+        services.AddSingleton<ICameraProvider, ReloadableCameraProvider>();
+        services.AddSingleton<ICameraEventStream, ProtectEventStream>();
+        services.AddTransient<IDesktopNotifier, DesktopNotifier>();
+        services.AddTransient<SettingsViewModel>();
+
+        services.AddSingleton<MainWindow>();
+    }
 
     private void OnActivated(object? sender, AppActivationArguments args)
     {
-        if (args.Kind == ExtendedActivationKind.ToastNotification)
-            _mainWindow?.DispatcherQueue.TryEnqueue(_mainWindow.BringToFront);
+        if (args.Kind == ExtendedActivationKind.StartupTask) return;
+
+        _mainWindow?.ShowFromBackground();
     }
 
-    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         e.Handled = true;
         Debug.WriteLine($"[App] Unhandled exception: {e.Exception}");

@@ -17,7 +17,7 @@ public sealed class UnifiCameraProviderFactory : ICameraProviderFactory
         return new UnifiProtectApiClient(Options.Create(new UnifiProtectOptions
         {
             BaseUrl = settings.UnifiProtect.BaseUrl,
-            ApiKey  = settings.UnifiProtect.ApiKey
+            ApiKey = settings.UnifiProtect.ApiKey
         }));
     }
 }

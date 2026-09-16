@@ -18,11 +18,14 @@ namespace Surveil.Unifi;
 
 public sealed class ProtectEventStream : ICameraEventStream
 {
+    private const int InitialBackoffMs = 1_000;
+    private const int MaxBackoffMs = 30_000;
+
     private readonly Lock _optionsLock = new();
-    private UnifiProtectOptions _options;
     private readonly IWebSocketFactory _wsFactory;
     private readonly EventNotificationSettings _eventSettings;
 
+    private UnifiProtectOptions _options;
     private CancellationTokenSource _reconnectCts = new();
 
     public ProtectEventStream(
@@ -45,31 +48,37 @@ public sealed class ProtectEventStream : ICameraEventStream
             notifier.SettingsChanged += OnSettingsChanged;
     }
 
-    private void OnSettingsChanged(AppSettings settings)
-    {
-        lock (_optionsLock)
-        {
-            _options = new UnifiProtectOptions
-            {
-                BaseUrl = settings.UnifiProtect.BaseUrl,
-                ApiKey  = settings.UnifiProtect.ApiKey
-            };
-        }
-
-        var oldCts = Interlocked.Exchange(ref _reconnectCts, new CancellationTokenSource());
-        oldCts.Cancel();
-        oldCts.Dispose();
-    }
-
     private UnifiProtectOptions CurrentOptions
     {
         get { lock (_optionsLock) return _options; }
     }
 
+    private void OnSettingsChanged(AppSettings settings)
+    {
+        var newOptions = new UnifiProtectOptions
+        {
+            BaseUrl = settings.UnifiProtect.BaseUrl,
+            ApiKey = settings.UnifiProtect.ApiKey
+        };
+
+        bool changed;
+        lock (_optionsLock)
+        {
+            changed = newOptions.BaseUrl != _options.BaseUrl || newOptions.ApiKey != _options.ApiKey;
+            _options = newOptions;
+        }
+
+        if (!changed) return;
+
+        var previousCts = Interlocked.Exchange(ref _reconnectCts, new CancellationTokenSource());
+        previousCts.Cancel();
+        previousCts.Dispose();
+    }
+
     public async IAsyncEnumerable<CameraEvent> SubscribeAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var backoffMs = 1_000;
+        var backoffMs = InitialBackoffMs;
 
         while (!ct.IsCancellationRequested)
         {
@@ -83,36 +92,32 @@ public sealed class ProtectEventStream : ICameraEventStream
             using var ws = _wsFactory.Create(CurrentOptions.ApiKey);
 
             var connected = false;
-            var cancelled = false;
+            var stopping = false;
 
             try
             {
                 await ws.ConnectAsync(wsUri, token);
                 connected = true;
-                backoffMs = 1_000;
+                backoffMs = InitialBackoffMs;
                 Debug.WriteLine($"[ProtectEventStream] Connected to {wsUri}");
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                cancelled = true;
             }
             catch (OperationCanceledException)
             {
-                // Settings changed mid-connect — loop again immediately with fresh options.
+                stopping = ct.IsCancellationRequested;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[ProtectEventStream] Connect failed ({ex.GetType().Name}): {ex.Message} — URI: {wsUri}");
             }
 
-            if (cancelled) yield break;
+            if (stopping) yield break;
 
             if (connected)
             {
-                await foreach (var ev in ReceiveAsync(ws, token, ct))
+                await foreach (var protectEvent in ReceiveAsync(ws, token, ct))
                 {
-                    if (ShouldEmit(ev))
-                        yield return ToCameraEvent(ev);
+                    if (ShouldEmit(protectEvent))
+                        yield return ToCameraEvent(protectEvent);
                 }
 
                 Debug.WriteLine($"[ProtectEventStream] Disconnected (ws state: {ws.State}), retrying in {backoffMs}ms");
@@ -120,14 +125,14 @@ public sealed class ProtectEventStream : ICameraEventStream
 
             if (ct.IsCancellationRequested) yield break;
 
-            var delayCancelled = false;
+            var reconnectRequested = false;
             try { await Task.Delay(backoffMs, token); }
-            catch (OperationCanceledException) { delayCancelled = true; }
+            catch (OperationCanceledException) { reconnectRequested = true; }
 
             if (ct.IsCancellationRequested) yield break;
-            if (delayCancelled) continue; // reconnect requested — retry now, don't grow the backoff
+            if (reconnectRequested) continue;
 
-            backoffMs = Math.Min(backoffMs * 2, 30_000);
+            backoffMs = Math.Min(backoffMs * 2, MaxBackoffMs);
         }
     }
 
@@ -156,13 +161,13 @@ public sealed class ProtectEventStream : ICameraEventStream
         [EnumeratorCancellation] CancellationToken ct)
     {
         var buffer = new byte[64 * 1024];
-        var sb = new StringBuilder();
+        var message = new StringBuilder();
 
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
-            sb.Clear();
-            var closed = false;
-            var interrupted = false;
+            message.Clear();
+            var closedByServer = false;
+            var reconnectRequested = false;
             bool endOfMessage;
 
             do
@@ -174,22 +179,26 @@ public sealed class ProtectEventStream : ICameraEventStream
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    // Settings changed — end this receive loop so the caller can reconnect.
-                    interrupted = true;
+                    reconnectRequested = true;
                     break;
                 }
 
-                if (result.MessageType == WebSocketMessageType.Close) { closed = true; break; }
-                sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    closedByServer = true;
+                    break;
+                }
+
+                message.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 endOfMessage = result.EndOfMessage;
             }
             while (!endOfMessage);
 
-            if (closed || interrupted) yield break;
+            if (closedByServer || reconnectRequested) yield break;
 
-            var ev = ParseEvent(sb.ToString());
-            if (ev is not null)
-                yield return ev;
+            var protectEvent = ParseEvent(message.ToString());
+            if (protectEvent is not null)
+                yield return protectEvent;
         }
     }
 
@@ -204,72 +213,68 @@ public sealed class ProtectEventStream : ICameraEventStream
                 ? ProtectEventUpdateType.Add
                 : ProtectEventUpdateType.Update;
 
-            var item   = root.GetProperty("item");
-            var id     = item.GetProperty("id").GetString()     ?? string.Empty;
-            var type   = item.GetProperty("type").GetString()   ?? string.Empty;
-            var start  = item.GetProperty("start").GetInt64();
+            var item = root.GetProperty("item");
+            var id = item.GetProperty("id").GetString() ?? string.Empty;
+            var type = item.GetProperty("type").GetString() ?? string.Empty;
+            var start = item.GetProperty("start").GetInt64();
             var device = item.GetProperty("device").GetString() ?? string.Empty;
 
             Debug.WriteLine($"[ProtectEventStream] Event: {updateType} {type} device={device}");
 
-            long? end = item.TryGetProperty("end", out var endProp) && endProp.ValueKind != JsonValueKind.Null
-                ? endProp.GetInt64()
-                : null;
-
-            var smartTypes = item.TryGetProperty("smartDetectTypes", out var stProp)
-                             && stProp.ValueKind == JsonValueKind.Array
-                ? stProp.EnumerateArray()
-                         .Select(e => e.GetString() ?? string.Empty)
-                         .ToList()
-                         .AsReadOnly()
-                : (IReadOnlyList<string>)[];
+            var end = ReadEnd(item);
+            var smartTypes = ReadSmartDetectTypes(item);
 
             return type switch
             {
-                // Camera
-                "motion"                => new MotionEvent(id, start, end, device, updateType),
-                "smartDetectZone"       => new SmartDetectZoneEvent(id, start, end, device, updateType, smartTypes),
-                "smartDetectLine"       => new SmartDetectLineEvent(id, start, end, device, updateType, smartTypes),
+                "motion" => new MotionEvent(id, start, end, device, updateType),
+                "smartDetectZone" => new SmartDetectZoneEvent(id, start, end, device, updateType, smartTypes),
+                "smartDetectLine" => new SmartDetectLineEvent(id, start, end, device, updateType, smartTypes),
                 "smartDetectLoiterZone" => new SmartDetectLoiterZoneEvent(id, start, end, device, updateType, smartTypes),
-                "smartAudioDetect"      => new SmartAudioDetectEvent(id, start, end, device, updateType, smartTypes),
+                "smartAudioDetect" => new SmartAudioDetectEvent(id, start, end, device, updateType, smartTypes),
 
-                // Doorbell
-                "ring"                  => new RingEvent(id, start, end, device, updateType),
+                "ring" => new RingEvent(id, start, end, device, updateType),
 
-                // Floodlight
-                "lightMotion"           => new LightMotionEvent(id, start, device, updateType),
+                "lightMotion" => new LightMotionEvent(id, start, device, updateType),
 
-                // Sensors — simple (no relevant metadata)
-                "sensorMotion"          => new SensorMotionEvent(id, start, end, device, updateType),
-                "sensorTamper"          => new SensorTamperEvent(id, start, end, device, updateType),
-                "sensorSmokeTest"       => new SensorSmokeTestEvent(id, start, end, device, updateType),
+                "sensorMotion" => new SensorMotionEvent(id, start, end, device, updateType),
+                "sensorTamper" => new SensorTamperEvent(id, start, end, device, updateType),
+                "sensorSmokeTest" => new SensorSmokeTestEvent(id, start, end, device, updateType),
 
-                // Sensors — with metadata
-                "sensorAlarm"           => new SensorAlarmEvent(id, start, end, device, updateType,
-                                              MetadataText(item, "alarmType")),
-                "sensorOpened"          => new SensorOpenedEvent(id, start, end, device, updateType,
-                                              MetadataText(item, "sensorMountType")),
-                "sensorClosed"          => new SensorClosedEvent(id, start, end, device, updateType,
-                                              MetadataText(item, "sensorMountType")),
-                "sensorWaterLeak"       => new SensorWaterLeakEvent(id, start, end, device, updateType,
-                                              MetadataText(item, "sensorMountType")),
-                "sensorBatteryLow"      => new SensorBatteryLowEvent(id, start, end, device, updateType,
-                                              MetadataNumber(item, "sensorBatteryPercentage", "number")),
-                "sensorExtremeValues"   => new SensorExtremeValuesEvent(id, start, end, device, updateType,
-                                              MetadataText(item, "sensorType"),
-                                              MetadataNumber(item, "sensorValue", "text"),
-                                              MetadataText(item, "status")),
+                "sensorAlarm" => new SensorAlarmEvent(id, start, end, device, updateType,
+                    MetadataText(item, "alarmType")),
+                "sensorOpened" => new SensorOpenedEvent(id, start, end, device, updateType,
+                    MetadataText(item, "sensorMountType")),
+                "sensorClosed" => new SensorClosedEvent(id, start, end, device, updateType,
+                    MetadataText(item, "sensorMountType")),
+                "sensorWaterLeak" => new SensorWaterLeakEvent(id, start, end, device, updateType,
+                    MetadataText(item, "sensorMountType")),
+                "sensorBatteryLow" => new SensorBatteryLowEvent(id, start, end, device, updateType,
+                    MetadataNumber(item, "sensorBatteryPercentage", "number")),
+                "sensorExtremeValues" => new SensorExtremeValuesEvent(id, start, end, device, updateType,
+                    MetadataText(item, "sensorType"),
+                    MetadataNumber(item, "sensorValue", "text"),
+                    MetadataText(item, "status")),
 
-                _                       => new UnknownEvent(id, type, start, end, device, updateType)
+                _ => new UnknownEvent(id, type, start, end, device, updateType)
             };
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[ProtectEventStream] Parse error: {ex.Message}");
-            Debug.WriteLine($"[ProtectEventStream] Raw JSON: {json[..Math.Min(json.Length, 500)]}");
+            Debug.WriteLine($"[ProtectEventStream] Raw JSON: {UnifiProtectApiClient.Truncate(json, 500)}");
             return null;
         }
     }
+
+    private static long? ReadEnd(JsonElement item) =>
+        item.TryGetProperty("end", out var end) && end.ValueKind != JsonValueKind.Null
+            ? end.GetInt64()
+            : null;
+
+    private static IReadOnlyList<string> ReadSmartDetectTypes(JsonElement item) =>
+        item.TryGetProperty("smartDetectTypes", out var types) && types.ValueKind == JsonValueKind.Array
+            ? types.EnumerateArray().Select(t => t.GetString() ?? string.Empty).ToList().AsReadOnly()
+            : [];
 
     private static string MetadataText(JsonElement item, string field) =>
         TryGetMetadataValue(item, field, "text", out var value)

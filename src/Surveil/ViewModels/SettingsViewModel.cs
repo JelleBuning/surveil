@@ -13,12 +13,19 @@ namespace Surveil.ViewModels;
 public sealed class SettingsViewModel : ObservableObject
 {
     private const string LaunchOnStartupDefaultDescription = "Start Surveil automatically when you sign in to Windows.";
+
     private readonly IAppSettingsRepository _repository;
     private readonly ISettingsChangeNotifier _notifier;
     private readonly IStartupTaskService _startupTaskService;
+    private readonly bool _isLoaded;
 
     private bool _isSyncingStartupStatus;
-    private readonly bool _isLoaded;
+
+    public IReadOnlyList<VideoProviderOption> AvailableProviders { get; } =
+    [
+        new(VideoProviderType.None, "None"),
+        new(VideoProviderType.UnifiProtect, "UniFi Protect")
+    ];
 
     public bool LaunchOnStartup
     {
@@ -36,23 +43,16 @@ public sealed class SettingsViewModel : ObservableObject
         get;
         private set
         {
-            if (SetProperty(ref field, value))
-            {
-                OnPropertyChanged(nameof(IsLaunchOnStartupToggleEnabled));
-                OnPropertyChanged(nameof(LaunchOnStartupDescription));
-            }
+            if (!SetProperty(ref field, value)) return;
+
+            OnPropertyChanged(nameof(IsLaunchOnStartupToggleEnabled));
+            OnPropertyChanged(nameof(LaunchOnStartupDescription));
         }
     } = StartupTaskStatus.Unavailable;
 
     public bool IsLaunchOnStartupToggleEnabled => StartupStatus.CanUserChange();
 
     public string LaunchOnStartupDescription => StartupStatus.GetRestrictionDescription() ?? LaunchOnStartupDefaultDescription;
-
-    public IReadOnlyList<VideoProviderOption> AvailableProviders { get; } =
-    [
-        new(VideoProviderType.None,          "None"),
-        new(VideoProviderType.UnifiProtect,  "UniFi Protect")
-    ];
 
     public VideoProviderOption SelectedProvider
     {
@@ -61,17 +61,13 @@ public sealed class SettingsViewModel : ObservableObject
         {
             if (!SetProperty(ref field, value)) return;
 
-            OnPropertyChanged(nameof(IsUnifiProviderSelected));
             OnPropertyChanged(nameof(UnifiProviderVisibility));
             SaveIfLoaded();
         }
     }
 
-    public bool IsUnifiProviderSelected =>
-        SelectedProvider.Type == VideoProviderType.UnifiProtect;
-
     public Visibility UnifiProviderVisibility =>
-        IsUnifiProviderSelected ? Visibility.Visible : Visibility.Collapsed;
+        SelectedProvider.Type == VideoProviderType.UnifiProtect ? Visibility.Visible : Visibility.Collapsed;
 
     public string BaseUrl
     {
@@ -109,23 +105,21 @@ public sealed class SettingsViewModel : ObservableObject
         ISettingsChangeNotifier notifier,
         IStartupTaskService startupTaskService)
     {
-        _repository         = repository;
-        _notifier           = notifier;
+        _repository = repository;
+        _notifier = notifier;
         _startupTaskService = startupTaskService;
 
         SelectedProvider = AvailableProviders.FirstOrDefault(p => p.Type == currentSettings.SelectedProvider)
-                            ?? AvailableProviders[0];
-        BaseUrl          = currentSettings.UnifiProtect.BaseUrl;
-        ApiKey           = currentSettings.UnifiProtect.ApiKey;
-        SnapshotPath     = currentSettings.UnifiProtect.SnapshotPath ?? string.Empty;
+                           ?? AvailableProviders[0];
+        BaseUrl = currentSettings.UnifiProtect.BaseUrl;
+        ApiKey = currentSettings.UnifiProtect.ApiKey;
+        SnapshotPath = currentSettings.UnifiProtect.SnapshotPath ?? string.Empty;
 
         _isLoaded = true;
     }
 
-    public async Task InitializeAsync(CancellationToken ct = default)
-    {
+    public async Task InitializeAsync(CancellationToken ct = default) =>
         SyncStartupStatus(await _startupTaskService.GetStatusAsync(ct));
-    }
 
     private async Task ApplyLaunchOnStartupAsync(bool enable)
     {
@@ -169,8 +163,8 @@ public sealed class SettingsViewModel : ObservableObject
             SelectedProvider = SelectedProvider.Type,
             UnifiProtect = new UnifiProtectProviderSettings
             {
-                BaseUrl      = BaseUrl.Trim(),
-                ApiKey       = ApiKey.Trim(),
+                BaseUrl = BaseUrl.Trim(),
+                ApiKey = ApiKey.Trim(),
                 SnapshotPath = string.IsNullOrWhiteSpace(SnapshotPath) ? null : SnapshotPath.Trim()
             }
         };
@@ -199,7 +193,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool Invalid(string message)
     {
         ErrorMessage = message;
-        ShowError    = true;
+        ShowError = true;
         return false;
     }
 }

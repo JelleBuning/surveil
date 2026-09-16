@@ -9,6 +9,10 @@ namespace Surveil.Services;
 
 public sealed class SnapshotService : IDisposable
 {
+    private const double HeroAspectRatio = 16.0 / 9.0;
+
+    private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(5);
+
     private readonly string _snapshotPath;
     private readonly string _heroPath;
     private readonly bool _enabled;
@@ -45,7 +49,7 @@ public sealed class SnapshotService : IDisposable
         if (now < Interlocked.Read(ref _nextSaveTicks)) return;
         if (Interlocked.CompareExchange(ref _saving, 1, 0) != 0) return;
 
-        Interlocked.Exchange(ref _nextSaveTicks, now + TimeSpan.FromSeconds(5).Ticks);
+        Interlocked.Exchange(ref _nextSaveTicks, now + SaveInterval.Ticks);
 
         var copy = new byte[pixels.Length];
         Buffer.BlockCopy(pixels, 0, copy, 0, pixels.Length);
@@ -58,13 +62,30 @@ public sealed class SnapshotService : IDisposable
         });
     }
 
+    public void Dispose() { }
+
     internal async Task SaveAsync(int width, int height, byte[] pixels)
     {
         await SaveJpegAsync(_snapshotPath, width, height, pixels);
 
-        // Save a 16:9 center-cropped version for the toast hero image slot
-        var (cropPixels, cropWidth, cropHeight) = CropToLandscape(pixels, width, height);
-        await SaveJpegAsync(_heroPath, cropWidth, cropHeight, cropPixels);
+        var (heroPixels, heroWidth, heroHeight) = CropToLandscape(pixels, width, height);
+        await SaveJpegAsync(_heroPath, heroWidth, heroHeight, heroPixels);
+    }
+
+    internal static (byte[] pixels, int width, int height) CropToLandscape(byte[] pixels, int width, int height)
+    {
+        var currentAspect = (double)width / height;
+        if (currentAspect >= HeroAspectRatio)
+            return (pixels, width, height);
+
+        var cropHeight = (int)(width / HeroAspectRatio);
+        var startY = (height - cropHeight) / 2;
+        var stride = width * 4;
+
+        var cropped = new byte[stride * cropHeight];
+        Buffer.BlockCopy(pixels, startY * stride, cropped, 0, cropped.Length);
+
+        return (cropped, width, cropHeight);
     }
 
     private static async Task SaveJpegAsync(string path, int width, int height, byte[] pixels)
@@ -83,29 +104,4 @@ public sealed class SnapshotService : IDisposable
         await using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         await ras.AsStreamForRead().CopyToAsync(fileStream);
     }
-
-    /// <summary>
-    /// Center-crops pixels to a 16:9 landscape rectangle.
-    /// If the image is already landscape, returns it unchanged.
-    /// </summary>
-    internal static (byte[] pixels, int width, int height) CropToLandscape(byte[] pixels, int width, int height)
-    {
-        const double targetAspect = 16.0 / 9.0;
-        var currentAspect = (double)width / height;
-
-        if (currentAspect >= targetAspect)
-            return (pixels, width, height); // already landscape enough
-
-        // Portrait: keep full width, crop height to 16:9
-        var cropHeight = (int)(width / targetAspect);
-        var startY = (height - cropHeight) / 2;
-        var stride = width * 4;
-
-        var result = new byte[stride * cropHeight];
-        Buffer.BlockCopy(pixels, startY * stride, result, 0, result.Length);
-
-        return (result, width, cropHeight);
-    }
-
-    public void Dispose() { }
 }

@@ -23,16 +23,15 @@ internal static class ProtectEventDescriber
         SensorMotionEvent => "Sensor motion",
         SensorTamperEvent => "Sensor tampered",
         SensorSmokeTestEvent => "Smoke detector test",
-        SensorAlarmEvent { AlarmType: { Length: > 0 } at } => $"Sensor alarm: {at}",
+        SensorAlarmEvent { AlarmType.Length: > 0 } e => $"Sensor alarm: {e.AlarmType}",
         SensorAlarmEvent => "Sensor alarm",
-        SensorOpenedEvent { MountType: { Length: > 0 } mt } => $"{Capitalize(mt)} opened",
+        SensorOpenedEvent { MountType.Length: > 0 } e => $"{Capitalize(e.MountType)} opened",
         SensorOpenedEvent => "Sensor opened",
-        SensorClosedEvent { MountType: { Length: > 0 } mt } => $"{Capitalize(mt)} closed",
+        SensorClosedEvent { MountType.Length: > 0 } e => $"{Capitalize(e.MountType)} closed",
         SensorClosedEvent => "Sensor closed",
         SensorWaterLeakEvent => "Water leak detected",
-        SensorBatteryLowEvent { BatteryPercentage: var pct } => $"Low battery: {pct:F0}%",
-        SensorExtremeValuesEvent { SensorType: var st, SensorValue: var sv, Status: var s }
-            => $"{Capitalize(st)} {s}: {sv:F1}",
+        SensorBatteryLowEvent e => $"Low battery: {e.BatteryPercentage:F0}%",
+        SensorExtremeValuesEvent e => $"{Capitalize(e.SensorType)} {e.Status}: {e.SensorValue:F1}",
 
         _ => $"Event: {protectEvent.Type}"
     };

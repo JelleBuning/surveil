@@ -34,6 +34,13 @@ public sealed class ReloadableCameraProviderTests
             canCreate ? new StubCameraProvider() : null;
     }
 
+    private readonly SettingsChangeNotifier _notifier = new();
+
+    private ReloadableCameraProvider CreateProvider(
+        AppSettings settings,
+        params ICameraProviderFactory[] factories) =>
+        new(settings, _notifier, factories);
+
     private static AppSettings NoneSettings() => new() { SelectedProvider = VideoProviderType.None };
 
     private static AppSettings UnifiSettings() => new()
@@ -45,9 +52,7 @@ public sealed class ReloadableCameraProviderTests
     [TestMethod]
     public async Task InitialSettingsNone_DelegatesToNoOpProvider()
     {
-        var notifier = new SettingsChangeNotifier();
-        var provider = new ReloadableCameraProvider(
-            NoneSettings(), notifier, [new StubFactory(VideoProviderType.UnifiProtect)]);
+        var provider = CreateProvider(NoneSettings(), new StubFactory(VideoProviderType.UnifiProtect));
 
         var cameras = await provider.GetCamerasAsync();
 
@@ -58,11 +63,9 @@ public sealed class ReloadableCameraProviderTests
     [TestMethod]
     public async Task SettingsChanged_ToNone_SwapsToNoOpProvider()
     {
-        var notifier = new SettingsChangeNotifier();
-        var provider = new ReloadableCameraProvider(
-            UnifiSettings(), notifier, [new StubFactory(VideoProviderType.UnifiProtect)]);
+        var provider = CreateProvider(UnifiSettings(), new StubFactory(VideoProviderType.UnifiProtect));
 
-        notifier.NotifyChanged(NoneSettings());
+        _notifier.NotifyChanged(NoneSettings());
 
         var cameras = await provider.GetCamerasAsync();
         Assert.IsEmpty(cameras);
@@ -71,9 +74,7 @@ public sealed class ReloadableCameraProviderTests
     [TestMethod]
     public async Task MatchingFactory_IsUsedForTheSelectedProvider()
     {
-        var notifier = new SettingsChangeNotifier();
-        var provider = new ReloadableCameraProvider(
-            UnifiSettings(), notifier, [new StubFactory(VideoProviderType.UnifiProtect)]);
+        var provider = CreateProvider(UnifiSettings(), new StubFactory(VideoProviderType.UnifiProtect));
 
         var cameras = await provider.GetCamerasAsync();
 
@@ -84,9 +85,8 @@ public sealed class ReloadableCameraProviderTests
     [TestMethod]
     public async Task FactoryReturningNull_FallsBackToNoOpProvider()
     {
-        var notifier = new SettingsChangeNotifier();
-        var provider = new ReloadableCameraProvider(
-            UnifiSettings(), notifier, [new StubFactory(VideoProviderType.UnifiProtect, canCreate: false)]);
+        var provider = CreateProvider(
+            UnifiSettings(), new StubFactory(VideoProviderType.UnifiProtect, canCreate: false));
 
         var cameras = await provider.GetCamerasAsync();
 
@@ -96,9 +96,7 @@ public sealed class ReloadableCameraProviderTests
     [TestMethod]
     public async Task NoFactoryForSelectedProvider_FallsBackToNoOpProvider()
     {
-        var notifier = new SettingsChangeNotifier();
-        var provider = new ReloadableCameraProvider(
-            UnifiSettings(), notifier, []);
+        var provider = CreateProvider(UnifiSettings());
 
         var cameras = await provider.GetCamerasAsync();
 
