@@ -8,6 +8,8 @@ namespace Surveil.Core.Tests.Services;
 [TestClass]
 public sealed class SnapshotServiceTests
 {
+    private const double LandscapeAspectRatio = 16.0 / 9.0;
+
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"snapshot-tests-{Guid.NewGuid():N}");
 
     [TestCleanup]
@@ -17,147 +19,118 @@ public sealed class SnapshotServiceTests
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    // ── GetHeroPath ───────────────────────────────────────────────────────────
+    private string TempPath(params string[] segments) =>
+        Path.Combine([_tempDir, .. segments]);
+
+    private static byte[] BgraPixels(int width, int height) => new byte[width * height * 4];
 
     [TestMethod]
     public void GetHeroPath_AddsHeroSuffix()
     {
-        var path = @"C:\snapshots\snapshot.jpg";
-        var hero = SnapshotService.GetHeroPath(path);
+        var hero = SnapshotService.GetHeroPath(@"C:\snapshots\snapshot.jpg");
+
         Assert.AreEqual(@"C:\snapshots\snapshot-hero.jpg", hero);
     }
 
     [TestMethod]
     public void GetHeroPath_PreservesExtension()
     {
-        var path = @"C:\snapshots\frame.png";
-        var hero = SnapshotService.GetHeroPath(path);
+        var hero = SnapshotService.GetHeroPath(@"C:\snapshots\frame.png");
+
         Assert.IsTrue(hero.EndsWith("-hero.png"));
     }
 
     [TestMethod]
     public void GetHeroPath_NestedDirectory_HeroIsInSameDirectory()
     {
-        var path = Path.Combine(_tempDir, "sub", "shot.jpg");
+        var path = TempPath("sub", "shot.jpg");
+
         var hero = SnapshotService.GetHeroPath(path);
+
         Assert.AreEqual(Path.GetDirectoryName(path), Path.GetDirectoryName(hero));
         Assert.IsTrue(Path.GetFileName(hero).StartsWith("shot-hero"));
     }
 
-    // ── Constructor ───────────────────────────────────────────────────────────
-
     [TestMethod]
     public void Constructor_CreatesDirectory()
     {
-        var snapshotPath = Path.Combine(_tempDir, "shots", "snapshot.jpg");
+        var snapshotPath = TempPath("shots", "snapshot.jpg");
+
         using var service = new SnapshotService(snapshotPath);
+
         Assert.IsTrue(Directory.Exists(Path.GetDirectoryName(snapshotPath)));
     }
 
-    // ── CropToLandscape ───────────────────────────────────────────────────────
-
     [TestMethod]
-    public void CropToLandscape_AlreadyLandscape_ReturnsSamePixels()
+    [DataRow(1920, 1080)]
+    [DataRow(160, 90)]
+    public void CropToLandscape_WhenAlreadyLandscape_ReturnsSamePixels(int width, int height)
     {
-        // 16:9 image — no crop needed
-        int w = 1920, h = 1080;
-        var pixels = new byte[w * h * 4];
-        new Random(42).NextBytes(pixels);
+        var pixels = BgraPixels(width, height);
 
-        var (result, rw, rh) = SnapshotService.CropToLandscape(pixels, w, h);
+        var (result, croppedWidth, croppedHeight) = SnapshotService.CropToLandscape(pixels, width, height);
 
         Assert.AreSame(pixels, result);
-        Assert.AreEqual(w, rw);
-        Assert.AreEqual(h, rh);
+        Assert.AreEqual(width, croppedWidth);
+        Assert.AreEqual(height, croppedHeight);
     }
 
     [TestMethod]
     public void CropToLandscape_SquareImage_CropsToLandscape()
     {
-        int w = 100, h = 100;
-        var pixels = new byte[w * h * 4];
+        var pixels = BgraPixels(100, 100);
 
-        var (result, rw, rh) = SnapshotService.CropToLandscape(pixels, w, h);
+        var (_, croppedWidth, croppedHeight) = SnapshotService.CropToLandscape(pixels, 100, 100);
 
-        Assert.AreEqual(w, rw);
-        Assert.IsTrue(rh < h, "Cropped height should be less than original"); // cropped height < original
-        // Verify 16:9 ratio
-        Assert.IsTrue(Math.Abs((double)rw / rh - 16.0 / 9.0) < 0.1);
+        Assert.AreEqual(100, croppedWidth);
+        Assert.IsTrue(croppedHeight < 100, "Cropped height should be less than original");
+        Assert.IsTrue(Math.Abs((double)croppedWidth / croppedHeight - LandscapeAspectRatio) < 0.1);
     }
 
     [TestMethod]
     public void CropToLandscape_PortraitImage_CropsToCenterLandscape()
     {
-        // 9:16 portrait
-        int w = 90, h = 160;
-        var stride = w * 4;
-        var pixels = new byte[stride * h];
+        int width = 90, height = 160;
+        var stride = width * 4;
+        var pixels = BgraPixels(width, height);
+        for (var row = 0; row < height; row++)
+            for (var column = 0; column < stride; column++)
+                pixels[row * stride + column] = (byte)(row % 256);
 
-        // Fill rows with row index so we can verify center crop
-        for (var row = 0; row < h; row++)
-            for (var col = 0; col < stride; col++)
-                pixels[row * stride + col] = (byte)(row % 256);
+        var (result, croppedWidth, croppedHeight) = SnapshotService.CropToLandscape(pixels, width, height);
 
-        var (result, rw, rh) = SnapshotService.CropToLandscape(pixels, w, h);
+        Assert.AreEqual(width, croppedWidth);
+        Assert.IsTrue(croppedHeight < height, "Cropped height should be less than original");
 
-        Assert.AreEqual(w, rw);
-        Assert.IsTrue(rh < h, "Cropped height should be less than original");
-
-        // The first row of result should come from somewhere in the middle
-        var cropHeight = (int)(w / (16.0 / 9.0));
-        var startY = (h - cropHeight) / 2;
-        Assert.AreEqual((byte)(startY % 256), result[0]);
+        var expectedCropHeight = (int)(width / LandscapeAspectRatio);
+        var expectedFirstRow = (height - expectedCropHeight) / 2;
+        Assert.AreEqual((byte)(expectedFirstRow % 256), result[0]);
     }
-
-    [TestMethod]
-    public void CropToLandscape_ExactAspectRatio_ReturnsSamePixels()
-    {
-        // Exact 16:9 ratio
-        int w = 160, h = 90;
-        var pixels = new byte[w * h * 4];
-        var (result, rw, rh) = SnapshotService.CropToLandscape(pixels, w, h);
-        Assert.AreSame(pixels, result);
-        Assert.AreEqual(w, rw);
-        Assert.AreEqual(h, rh);
-    }
-
-    // ── CaptureFrame (throttle logic) ─────────────────────────────────────────
 
     [TestMethod]
     public void CaptureFrame_FirstCall_DoesNotThrow()
     {
-        var snapshotPath = Path.Combine(_tempDir, "snap.jpg");
-        using var service = new SnapshotService(snapshotPath);
-        var pixels = new byte[4 * 4 * 4]; // 4x4 BGRA
+        using var service = new SnapshotService(TempPath("snap.jpg"));
 
-        // Should not throw even if WinRT encoder is not available
-        // (fails silently in background task)
+        service.CaptureFrame(4, 4, BgraPixels(4, 4));
+    }
+
+    [TestMethod]
+    public void CaptureFrame_CalledTwiceInARow_ThrottlesTheSecondCall()
+    {
+        using var service = new SnapshotService(TempPath("snap.jpg"));
+        var pixels = BgraPixels(4, 4);
+
+        service.CaptureFrame(4, 4, pixels);
         service.CaptureFrame(4, 4, pixels);
     }
 
     [TestMethod]
-    public void CaptureFrame_ThrottlesConsecutiveCalls()
+    public void Dispose_CalledTwice_DoesNotThrow()
     {
-        var snapshotPath = Path.Combine(_tempDir, "snap.jpg");
-        using var service = new SnapshotService(snapshotPath);
-        var pixels = new byte[4 * 4 * 4];
+        var service = new SnapshotService(TempPath("snap.jpg"));
 
-        // First call triggers a save
-        service.CaptureFrame(4, 4, pixels);
-
-        // Second call immediately after should be throttled (no save in < 5 seconds)
-        // This is observable only indirectly; verify no exception
-        service.CaptureFrame(4, 4, pixels);
-    }
-
-    // ── Dispose ───────────────────────────────────────────────────────────────
-
-    [TestMethod]
-    public void Dispose_CanBeCalledMultipleTimes()
-    {
-        var snapshotPath = Path.Combine(_tempDir, "snap.jpg");
-        var service = new SnapshotService(snapshotPath);
         service.Dispose();
-        service.Dispose(); // Should not throw
+        service.Dispose();
     }
 }

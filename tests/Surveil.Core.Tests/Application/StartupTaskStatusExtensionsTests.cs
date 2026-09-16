@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Surveil.Application.Ports;
 
@@ -9,7 +10,7 @@ public sealed class StartupTaskStatusExtensionsTests
     [TestMethod]
     [DataRow(StartupTaskStatus.Enabled)]
     [DataRow(StartupTaskStatus.EnabledByPolicy)]
-    public void IsEnabled_IsTrue_ForEnabledStates(StartupTaskStatus status)
+    public void IsEnabled_ForAnEnabledState_IsTrue(StartupTaskStatus status)
     {
         Assert.IsTrue(status.IsEnabled());
     }
@@ -19,7 +20,7 @@ public sealed class StartupTaskStatusExtensionsTests
     [DataRow(StartupTaskStatus.DisabledByUser)]
     [DataRow(StartupTaskStatus.DisabledByPolicy)]
     [DataRow(StartupTaskStatus.Unavailable)]
-    public void IsEnabled_IsFalse_ForEveryOtherState(StartupTaskStatus status)
+    public void IsEnabled_ForEveryOtherState_IsFalse(StartupTaskStatus status)
     {
         Assert.IsFalse(status.IsEnabled());
     }
@@ -27,7 +28,7 @@ public sealed class StartupTaskStatusExtensionsTests
     [TestMethod]
     [DataRow(StartupTaskStatus.Enabled)]
     [DataRow(StartupTaskStatus.Disabled)]
-    public void CanUserChange_IsTrue_WhenWindowsLeavesTheDecisionToTheApp(StartupTaskStatus status)
+    public void CanUserChange_WhenWindowsLeavesTheDecisionToTheApp_IsTrue(StartupTaskStatus status)
     {
         Assert.IsTrue(status.CanUserChange());
     }
@@ -37,7 +38,7 @@ public sealed class StartupTaskStatusExtensionsTests
     [DataRow(StartupTaskStatus.DisabledByPolicy)]
     [DataRow(StartupTaskStatus.EnabledByPolicy)]
     [DataRow(StartupTaskStatus.Unavailable)]
-    public void CanUserChange_IsFalse_WhenTheDecisionIsTakenElsewhere(StartupTaskStatus status)
+    public void CanUserChange_WhenTheDecisionIsTakenElsewhere_IsFalse(StartupTaskStatus status)
     {
         Assert.IsFalse(status.CanUserChange());
     }
@@ -45,7 +46,7 @@ public sealed class StartupTaskStatusExtensionsTests
     [TestMethod]
     [DataRow(StartupTaskStatus.Enabled)]
     [DataRow(StartupTaskStatus.Disabled)]
-    public void GetRestrictionDescription_IsNull_WhenTheSettingIsChangeable(StartupTaskStatus status)
+    public void GetRestrictionDescription_WhenTheSettingIsChangeable_IsNull(StartupTaskStatus status)
     {
         Assert.IsNull(status.GetRestrictionDescription());
     }
@@ -55,7 +56,7 @@ public sealed class StartupTaskStatusExtensionsTests
     [DataRow(StartupTaskStatus.DisabledByPolicy)]
     [DataRow(StartupTaskStatus.EnabledByPolicy)]
     [DataRow(StartupTaskStatus.Unavailable)]
-    public void GetRestrictionDescription_ExplainsWhy_WhenTheSettingIsLocked(StartupTaskStatus status)
+    public void GetRestrictionDescription_WhenTheSettingIsLocked_ExplainsWhy(StartupTaskStatus status)
     {
         var description = status.GetRestrictionDescription();
 
@@ -64,7 +65,7 @@ public sealed class StartupTaskStatusExtensionsTests
     }
 
     [TestMethod]
-    public void EveryLockedStatus_HasItsOwnExplanation()
+    public void GetRestrictionDescription_ForEveryLockedStatus_IsDistinct()
     {
         StartupTaskStatus[] locked =
         [
@@ -74,10 +75,14 @@ public sealed class StartupTaskStatusExtensionsTests
             StartupTaskStatus.Unavailable
         ];
 
-        var descriptions = new System.Collections.Generic.HashSet<string>();
+        var descriptions = new HashSet<string>();
 
         foreach (var status in locked)
-            Assert.IsTrue(descriptions.Add(status.GetRestrictionDescription()!),
-                $"{status} reuses another status' description.");
+        {
+            var description = status.GetRestrictionDescription();
+
+            Assert.IsNotNull(description);
+            Assert.IsTrue(descriptions.Add(description), $"{status} reuses another status' description.");
+        }
     }
 }

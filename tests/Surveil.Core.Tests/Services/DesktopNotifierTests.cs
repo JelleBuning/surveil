@@ -1,3 +1,4 @@
+using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using Surveil.Application.Settings;
@@ -9,44 +10,31 @@ namespace Surveil.Core.Tests.Services;
 [TestClass]
 public sealed class DesktopNotifierTests
 {
-    private static DesktopNotifier CreateNotifier(
-        string? snapshotPath = null,
-        IAppNotificationSender? sender = null)
-    {
-        sender ??= new Mock<IAppNotificationSender>().Object;
-        var path = snapshotPath ?? @"C:
-onexistent\path\snapshot.jpg";
-        return new DesktopNotifier(new SnapshotOptions(path), sender);
-    }
+    private const string MissingSnapshotPath = @"C:\nonexistent\path\snapshot.jpg";
 
-    // ── Notify ────────────────────────────────────────────────────────────────
+    private readonly Mock<IAppNotificationSender> _sender = new();
+    private readonly CameraEvent _event = new("id", "dev1", "Doorbell ring");
+
+    private DesktopNotifier CreateNotifier() =>
+        new(new SnapshotOptions(MissingSnapshotPath), _sender.Object);
 
     [TestMethod]
-    public void Notify_CallsSender_WithTitleAndNoHero_WhenHeroDoesNotExist()
+    public void Notify_WhenTheHeroSnapshotDoesNotExist_SendsTheTitleWithoutAHero()
     {
-        // Arrange
-        var senderMock = new Mock<IAppNotificationSender>();
-        var notifier = CreateNotifier(snapshotPath: @"C:\nonexistent\path\snapshot.jpg", sender: senderMock.Object);
-        var ev = new CameraEvent("id", "dev1", "Doorbell ring");
+        var notifier = CreateNotifier();
 
-        // Act
-        notifier.Notify(ev, "Front Door");
+        notifier.Notify(_event, "Front Door");
 
-        // Assert — hero path doesn't exist, so null is passed
-        senderMock.Verify(s => s.Notify("Doorbell ring (Front Door)", null), Times.Once());
+        _sender.Verify(s => s.Notify("Doorbell ring (Front Door)", null), Times.Once());
     }
 
     [TestMethod]
-    public void Notify_SenderThrows_ExceptionSuppressed()
+    public void Notify_WhenTheSenderThrows_SuppressesTheException()
     {
-        // Arrange
-        var senderMock = new Mock<IAppNotificationSender>();
-        senderMock.Setup(s => s.Notify(It.IsAny<string>(), It.IsAny<string?>()))
-                  .Throws(new System.InvalidOperationException("WinRT not initialized"));
-        var notifier = CreateNotifier(sender: senderMock.Object);
-        var ev = new CameraEvent("id", "dev1", "Doorbell ring");
+        _sender.Setup(s => s.Notify(It.IsAny<string>(), It.IsAny<string?>()))
+               .Throws(new InvalidOperationException("WinRT not initialized"));
+        var notifier = CreateNotifier();
 
-        // Act — should not throw
-        notifier.Notify(ev, "Front Door");
+        notifier.Notify(_event, "Front Door");
     }
 }

@@ -5,21 +5,16 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Surveil.Unifi;
 
 namespace Surveil.Unifi.Tests;
 
-/// <summary>Configurable stub for HttpMessageHandler.</summary>
-internal sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
+internal sealed class StubHttpHandler(HttpStatusCode status, string body) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken) =>
-        Task.FromResult(handler(request));
-
-    public static StubHttpHandler Returning(HttpStatusCode status, string json) =>
-        new(_ => new HttpResponseMessage(status)
+        Task.FromResult(new HttpResponseMessage(status)
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
             RequestMessage = new HttpRequestMessage()
         });
 }
@@ -27,30 +22,32 @@ internal sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessa
 [TestClass]
 public sealed class UnifiProtectApiClientTests
 {
-    private static UnifiProtectApiClient CreateClient(StubHttpHandler handler, string? reachableHost = null)
+    private static UnifiProtectApiClient CreateClient(
+        string body, HttpStatusCode status = HttpStatusCode.OK, string? reachableHost = null)
     {
-        var http = new HttpClient(handler) { BaseAddress = new Uri("https://host/api/") };
+        var http = new HttpClient(new StubHttpHandler(status, body)) { BaseAddress = new Uri("https://host/api/") };
         return new UnifiProtectApiClient(http, reachableHost);
     }
 
-    // ── GetCamerasAsync ───────────────────────────────────────────────────────
+    private static string StreamsJson(
+        string? high = null, string? medium = null, string? low = null, string? package = null) =>
+        $$"""{"high":{{Quote(high)}},"medium":{{Quote(medium)}},"low":{{Quote(low)}},"package":{{Quote(package)}}}""";
+
+    private static string Quote(string? url) => url is null ? "null" : $"\"{url}\"";
 
     [TestMethod]
     public async Task GetCamerasAsync_ValidJson_ReturnsMappedCameras()
     {
-        // Arrange
         const string json = """
             [
               {"id":"cam1","name":"Front Door","state":"CONNECTED"},
               {"id":"cam2","name":"Backyard","state":"DISCONNECTED"}
             ]
             """;
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(json);
 
-        // Act
         var cameras = await client.GetCamerasAsync();
 
-        // Assert
         Assert.HasCount(2, cameras);
         Assert.AreEqual("cam1", cameras[0].Id);
         Assert.AreEqual("Front Door", cameras[0].Name);
@@ -62,43 +59,45 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetCamerasAsync_EmptyArray_ReturnsEmptyList()
     {
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, "[]"));
+        var client = CreateClient("[]");
+
         var cameras = await client.GetCamerasAsync();
+
         Assert.IsEmpty(cameras);
     }
 
     [TestMethod]
     public async Task GetCamerasAsync_ServerError_ThrowsHttpRequestException()
     {
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.Unauthorized, "Unauthorized"));
+        var client = CreateClient("Unauthorized", HttpStatusCode.Unauthorized);
+
         var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetCamerasAsync());
+
         Assert.AreEqual(HttpStatusCode.Unauthorized, ex.StatusCode);
     }
 
     [TestMethod]
     public async Task GetCamerasAsync_LongErrorBody_TruncatesTo300Chars()
     {
-        var longBody = new string('x', 400);
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.InternalServerError, longBody));
+        var client = CreateClient(new string('x', 400), HttpStatusCode.InternalServerError);
+
         var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetCamerasAsync());
-        // Body truncated to 300 chars + "…"
-        Assert.IsTrue(ex.Message.Contains('…'));
+
+        Assert.Contains("…", ex.Message);
     }
 
     [TestMethod]
     public async Task GetCamerasAsync_InvalidJson_ThrowsInvalidOperationException()
     {
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, "not-json"));
+        var client = CreateClient("not-json");
+
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetCamerasAsync());
     }
-
-    // ── GetRtspsStreamsAsync ───────────────────────────────────────────────────
 
     [TestMethod]
     public async Task GetRtspsStreamsAsync_HighQualityPresent_ReturnsHighStream()
     {
-        const string json = """{"high":"rtsps://host/high","medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(high: "rtsps://host/high"));
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
@@ -110,8 +109,7 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetRtspsStreamsAsync_NoHighOnlyMedium_ReturnsMediumStream()
     {
-        const string json = """{"high":null,"medium":"rtsps://host/medium","low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(medium: "rtsps://host/medium"));
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
@@ -122,8 +120,7 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetRtspsStreamsAsync_OnlyLow_ReturnsLowStream()
     {
-        const string json = """{"high":null,"medium":null,"low":"rtsps://host/low","package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(low: "rtsps://host/low"));
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
@@ -134,8 +131,7 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetRtspsStreamsAsync_OnlyPackage_ReturnsPackageStream()
     {
-        const string json = """{"high":null,"medium":null,"low":null,"package":"rtsps://host/pkg"}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(package: "rtsps://host/pkg"));
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
@@ -146,18 +142,17 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetRtspsStreamsAsync_AllNull_ReturnsEmptyList()
     {
-        const string json = """{"high":null,"medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson());
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
+
         Assert.IsEmpty(streams);
     }
 
     [TestMethod]
     public async Task GetRtspsStreamsAsync_PortAndSrtpQuery_NormalizedForLibVlc()
     {
-        const string json = """{"high":"rtsps://host:7441/stream?enableSrtp","medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(high: "rtsps://host:7441/stream?enableSrtp"));
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
@@ -167,8 +162,7 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetRtspsStreamsAsync_HostDiffersFromReachableHost_RewritesHost()
     {
-        const string json = """{"high":"rtsps://console-lan-ip/stream","medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json), reachableHost: "host");
+        var client = CreateClient(StreamsJson(high: "rtsps://console-lan-ip/stream"), reachableHost: "host");
 
         var streams = await client.GetRtspsStreamsAsync("cam1");
 
@@ -178,17 +172,15 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task GetRtspsStreamsAsync_ServerError_ThrowsHttpRequestException()
     {
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.NotFound, "Not found"));
+        var client = CreateClient("Not found", HttpStatusCode.NotFound);
+
         await Assert.ThrowsAsync<HttpRequestException>(() => client.GetRtspsStreamsAsync("cam1"));
     }
-
-    // ── CreateRtspsStreamAsync ────────────────────────────────────────────────
 
     [TestMethod]
     public async Task CreateRtspsStreamAsync_SuccessWithHighUrl_ReturnsBestStream()
     {
-        const string json = """{"high":"rtsps://host/high","medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(high: "rtsps://host/high"));
 
         var stream = await client.CreateRtspsStreamAsync("cam1");
 
@@ -199,8 +191,7 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task CreateRtspsStreamAsync_AllUrlsNull_ThrowsInvalidOperationException()
     {
-        const string json = """{"high":null,"medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.CreateRtspsStreamAsync("cam1"));
     }
@@ -208,18 +199,19 @@ public sealed class UnifiProtectApiClientTests
     [TestMethod]
     public async Task CreateRtspsStreamAsync_ServerError_ThrowsHttpRequestException()
     {
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.BadRequest, "Bad request"));
+        var client = CreateClient("Bad request", HttpStatusCode.BadRequest);
+
         await Assert.ThrowsAsync<HttpRequestException>(() => client.CreateRtspsStreamAsync("cam1"));
     }
 
     [TestMethod]
     public async Task CreateRtspsStreamAsync_WithCancellationToken_PassesToken()
     {
-        const string json = """{"high":"rtsps://host/high","medium":null,"low":null,"package":null}""";
-        var client = CreateClient(StubHttpHandler.Returning(HttpStatusCode.OK, json));
+        var client = CreateClient(StreamsJson(high: "rtsps://host/high"));
         using var cts = new CancellationTokenSource();
 
         var stream = await client.CreateRtspsStreamAsync("cam1", cts.Token);
+
         Assert.IsNotNull(stream);
     }
 }

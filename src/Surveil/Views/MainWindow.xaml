@@ -4,10 +4,7 @@
     x:Class="Surveil.Views.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:notifyIcon="using:H.NotifyIcon"
-    mc:Ignorable="d">
+    xmlns:notifyIcon="using:H.NotifyIcon">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="Base" />
@@ -47,8 +44,7 @@
             x:Name="TaskBarIcon"
             ToolTipText="Surveil"
             IconSource="/Assets/tray-icon.ico"
-            LeftClickCommand="{Binding LeftClickCommand}"
-            x:FieldModifier="public">
+            LeftClickCommand="{Binding LeftClickCommand}">
             <notifyIcon:TaskbarIcon.ContextFlyout>
                 <MenuFlyout>
                     <MenuFlyoutItem x:Name="ExitMenuItem" Text="Exit" />

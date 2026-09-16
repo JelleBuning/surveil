@@ -19,7 +19,8 @@ public sealed class WindowsStartupTaskService : IStartupTaskService
     public async Task<StartupTaskStatus> EnableAsync(CancellationToken ct = default)
     {
         var task = await TryGetTaskAsync(ct);
-        if (task is null) return StartupTaskStatus.Unavailable;
+        if (task is null)
+            return StartupTaskStatus.Unavailable;
 
         try
         {
@@ -34,7 +35,8 @@ public sealed class WindowsStartupTaskService : IStartupTaskService
     public async Task<StartupTaskStatus> DisableAsync(CancellationToken ct = default)
     {
         var task = await TryGetTaskAsync(ct);
-        if (task is null) return StartupTaskStatus.Unavailable;
+        if (task is null)
+            return StartupTaskStatus.Unavailable;
 
         try
         {
@@ -61,11 +63,11 @@ public sealed class WindowsStartupTaskService : IStartupTaskService
 
     internal static StartupTaskStatus Map(StartupTaskState state) => state switch
     {
-        StartupTaskState.Enabled          => StartupTaskStatus.Enabled,
-        StartupTaskState.EnabledByPolicy  => StartupTaskStatus.EnabledByPolicy,
-        StartupTaskState.Disabled         => StartupTaskStatus.Disabled,
-        StartupTaskState.DisabledByUser   => StartupTaskStatus.DisabledByUser,
+        StartupTaskState.Enabled => StartupTaskStatus.Enabled,
+        StartupTaskState.EnabledByPolicy => StartupTaskStatus.EnabledByPolicy,
+        StartupTaskState.Disabled => StartupTaskStatus.Disabled,
+        StartupTaskState.DisabledByUser => StartupTaskStatus.DisabledByUser,
         StartupTaskState.DisabledByPolicy => StartupTaskStatus.DisabledByPolicy,
-        _                                 => StartupTaskStatus.Unavailable
+        _ => StartupTaskStatus.Unavailable
     };
 }

@@ -2,49 +2,44 @@ namespace Surveil.Unifi;
 
 public sealed class EventNotificationSettings
 {
-    // ── Camera ────────────────────────────────────────────────────────────────
-    public bool Motion                  { get; init; } = false;
-    public bool SmartDetectZone         { get; init; } = false;
-    public bool SmartDetectLine         { get; init; } = false;
-    public bool SmartDetectLoiterZone   { get; init; } = false;
-    public bool SmartAudioDetect        { get; init; } = false;
+    public bool Motion { get; init; }
+    public bool SmartDetectZone { get; init; }
+    public bool SmartDetectLine { get; init; }
+    public bool SmartDetectLoiterZone { get; init; }
+    public bool SmartAudioDetect { get; init; }
 
-    // ── Doorbell ──────────────────────────────────────────────────────────────
-    public bool Ring                    { get; init; } = true;
+    public bool Ring { get; init; } = true;
 
-    // ── Floodlight ────────────────────────────────────────────────────────────
-    public bool LightMotion             { get; init; } = false;
+    public bool LightMotion { get; init; }
 
-    // ── Sensor ────────────────────────────────────────────────────────────────
-    public bool SensorMotion            { get; init; } = false;
-    public bool SensorTamper            { get; init; } = false;
-    public bool SensorSmokeTest         { get; init; } = false;
-    public bool SensorAlarm             { get; init; } = false;
-    public bool SensorOpened            { get; init; } = false;
-    public bool SensorClosed            { get; init; } = false;
-    public bool SensorWaterLeak         { get; init; } = false;
-    public bool SensorBatteryLow        { get; init; } = false;
-    public bool SensorExtremeValues     { get; init; } = false;
+    public bool SensorMotion { get; init; }
+    public bool SensorTamper { get; init; }
+    public bool SensorSmokeTest { get; init; }
+    public bool SensorAlarm { get; init; }
+    public bool SensorOpened { get; init; }
+    public bool SensorClosed { get; init; }
+    public bool SensorWaterLeak { get; init; }
+    public bool SensorBatteryLow { get; init; }
+    public bool SensorExtremeValues { get; init; }
 
-    /// <summary>Returns true when the given event type should trigger a notification.</summary>
     public bool IsEnabled(ProtectEvent @event) => @event switch
     {
-        MotionEvent                 => Motion,
-        SmartDetectZoneEvent        => SmartDetectZone,
-        SmartDetectLineEvent        => SmartDetectLine,
-        SmartDetectLoiterZoneEvent  => SmartDetectLoiterZone,
-        SmartAudioDetectEvent       => SmartAudioDetect,
-        RingEvent                   => Ring,
-        LightMotionEvent            => LightMotion,
-        SensorMotionEvent           => SensorMotion,
-        SensorTamperEvent           => SensorTamper,
-        SensorSmokeTestEvent        => SensorSmokeTest,
-        SensorAlarmEvent            => SensorAlarm,
-        SensorOpenedEvent           => SensorOpened,
-        SensorClosedEvent           => SensorClosed,
-        SensorWaterLeakEvent        => SensorWaterLeak,
-        SensorBatteryLowEvent       => SensorBatteryLow,
-        SensorExtremeValuesEvent    => SensorExtremeValues,
-        _                           => false
+        MotionEvent => Motion,
+        SmartDetectZoneEvent => SmartDetectZone,
+        SmartDetectLineEvent => SmartDetectLine,
+        SmartDetectLoiterZoneEvent => SmartDetectLoiterZone,
+        SmartAudioDetectEvent => SmartAudioDetect,
+        RingEvent => Ring,
+        LightMotionEvent => LightMotion,
+        SensorMotionEvent => SensorMotion,
+        SensorTamperEvent => SensorTamper,
+        SensorSmokeTestEvent => SensorSmokeTest,
+        SensorAlarmEvent => SensorAlarm,
+        SensorOpenedEvent => SensorOpened,
+        SensorClosedEvent => SensorClosed,
+        SensorWaterLeakEvent => SensorWaterLeak,
+        SensorBatteryLowEvent => SensorBatteryLow,
+        SensorExtremeValuesEvent => SensorExtremeValues,
+        _ => false
     };
 }

@@ -1,8 +1,8 @@
-using LibVLCSharp.Shared;
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using LibVLCSharp.Shared;
 
 namespace Surveil.Services;
 
@@ -11,11 +11,14 @@ internal sealed class DefaultVlcPlayerFactory : IVlcPlayerFactory
 {
     private static readonly LibVLC Shared = CreateShared();
 
+    public IVlcPlayerHandle Create(string url, Action<string> onError) =>
+        new VlcPlayerHandle(Shared, url, onError);
+
     private static LibVLC CreateShared()
     {
-        var arch = Environment.Is64BitProcess ? "win-x64" : "win-x86";
-        var vlcDir = Path.Combine(AppContext.BaseDirectory, "libvlc", arch);
-        Core.Initialize(vlcDir);
+        var architecture = Environment.Is64BitProcess ? "win-x64" : "win-x86";
+        var vlcDirectory = Path.Combine(AppContext.BaseDirectory, "libvlc", architecture);
+        LibVLCSharp.Shared.Core.Initialize(vlcDirectory);
 
         var libVlc = new LibVLC(enableDebugLogs: false);
 
@@ -27,7 +30,4 @@ internal sealed class DefaultVlcPlayerFactory : IVlcPlayerFactory
 
         return libVlc;
     }
-
-    public IVlcPlayerHandle Create(string url, Action<string> onError) =>
-        new VlcPlayerHandle(Shared, url, onError);
 }

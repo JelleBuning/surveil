@@ -6,7 +6,6 @@ using Surveil.Domain.Cameras;
 
 namespace Surveil.Application.Ports;
 
-/// <summary>Used when no video provider is configured (VideoProviderType.None).</summary>
 public sealed class NoOpCameraProvider : ICameraProvider
 {
     public Task<IReadOnlyList<Camera>> GetCamerasAsync(CancellationToken ct = default) =>

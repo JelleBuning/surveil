@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -6,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Options;
 using Surveil.Application.Ports;
 using Surveil.Domain.Cameras;
 
@@ -13,6 +13,9 @@ namespace Surveil.Unifi;
 
 public sealed class UnifiProtectApiClient : ICameraProvider
 {
+    private const int BodyPreviewLength = 500;
+    private const int ErrorBodyPreviewLength = 300;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -56,8 +59,9 @@ public sealed class UnifiProtectApiClient : ICameraProvider
     public async Task<IReadOnlyList<RtspsStream>> GetRtspsStreamsAsync(string cameraId, CancellationToken ct = default)
     {
         var dto = await GetJsonAsync<RtspsStreamDto>($"v1/cameras/{cameraId}/rtsps-stream", ct);
-        var best = dto?.BestStream();
-        return best.HasValue ? [new RtspsStream(NormalizeForLibVlc(best.Value.Url), best.Value.Quality)] : [];
+        return dto?.BestStream() is { } best
+            ? [new RtspsStream(NormalizeForLibVlc(best.Url), best.Quality)]
+            : [];
     }
 
     public async Task<RtspsStream> CreateRtspsStreamAsync(string cameraId, CancellationToken ct = default)
@@ -70,12 +74,6 @@ public sealed class UnifiProtectApiClient : ICameraProvider
         return new RtspsStream(NormalizeForLibVlc(best.Url), best.Quality);
     }
 
-    /// <summary>
-    /// LibVLC 3.x cannot handle RTSPS (TLS) or SRTP, so this rewrites to plain RTSP on
-    /// the unencrypted media port (7447). It also corrects the host to the one used to
-    /// reach the API, since the console can report an RTSP host (e.g. a stale/secondary
-    /// interface) that isn't reachable from wherever this client is running (notably: a VPN).
-    /// </summary>
     private string NormalizeForLibVlc(string url)
     {
         var rewritten = url
@@ -92,10 +90,6 @@ public sealed class UnifiProtectApiClient : ICameraProvider
         return new UriBuilder(streamUri) { Host = _reachableHost }.Uri.ToString();
     }
 
-    /// <summary>
-    /// GET helper: checks HTTP status first, then deserializes.
-    /// On deserialization failure, includes the raw body in the exception.
-    /// </summary>
     private async Task<T?> GetJsonAsync<T>(string requestUri, CancellationToken ct)
     {
         var response = await _http.GetAsync(requestUri, ct);
@@ -106,7 +100,8 @@ public sealed class UnifiProtectApiClient : ICameraProvider
     private static async Task<T?> DeserializeAsync<T>(HttpResponseMessage response, CancellationToken ct)
     {
         var body = await response.Content.ReadAsStringAsync(ct);
-        Debug.WriteLine($"[UnifiProtectApiClient] {response.RequestMessage?.RequestUri} → {body[..Math.Min(body.Length, 500)]}");
+        var preview = Truncate(body, BodyPreviewLength);
+        Debug.WriteLine($"[UnifiProtectApiClient] {response.RequestMessage?.RequestUri} → {preview}");
         try
         {
             return JsonSerializer.Deserialize<T>(body, JsonOptions);
@@ -115,7 +110,7 @@ public sealed class UnifiProtectApiClient : ICameraProvider
         {
             throw new InvalidOperationException(
                 $"Failed to deserialize response from {response.RequestMessage?.RequestUri} as {typeof(T).Name}. " +
-                $"Body: {body[..Math.Min(body.Length, 500)]}", ex);
+                $"Body: {preview}", ex);
         }
     }
 
@@ -125,10 +120,10 @@ public sealed class UnifiProtectApiClient : ICameraProvider
 
         var body = string.Empty;
         try { body = await response.Content.ReadAsStringAsync(ct); }
-        catch { /* best-effort */ }
+        catch { }
 
-        if (body.Length > 300)
-            body = body[..300] + "…";
+        if (body.Length > ErrorBodyPreviewLength)
+            body = Truncate(body, ErrorBodyPreviewLength) + "…";
 
         Debug.WriteLine($"[UnifiProtectApiClient] HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {body}");
         throw new HttpRequestException(
@@ -137,21 +132,22 @@ public sealed class UnifiProtectApiClient : ICameraProvider
             statusCode: response.StatusCode);
     }
 
+    private static string Truncate(string text, int maxLength) =>
+        text.Length <= maxLength ? text : text[..maxLength];
+
     private sealed record CameraDto(string Id, string Name, string State);
 
-    /// <summary>Quality-keyed RTSPS stream object returned by the API.</summary>
     private sealed record RtspsStreamDto(
         string? High,
         string? Medium,
         string? Low,
         string? Package)
     {
-        /// <summary>Returns the best available stream URL and its quality label, or null if none.</summary>
         public (string Url, string Quality)? BestStream()
         {
-            if (High    is not null) return (High,    "high");
-            if (Medium  is not null) return (Medium,  "medium");
-            if (Low     is not null) return (Low,     "low");
+            if (High is not null) return (High, "high");
+            if (Medium is not null) return (Medium, "medium");
+            if (Low is not null) return (Low, "low");
             if (Package is not null) return (Package, "package");
             return null;
         }

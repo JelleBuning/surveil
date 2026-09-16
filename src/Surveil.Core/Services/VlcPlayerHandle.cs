@@ -1,10 +1,10 @@
-using LibVLCSharp.Shared;
 using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using LibVLCSharp.Shared;
 
 namespace Surveil.Services;
 
@@ -14,17 +14,16 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
     private readonly MediaPlayer _mediaPlayer;
     private readonly Media _media;
 
-    private byte[]? _pixelBuffer;
-    private GCHandle _bufferHandle;
-    private int _width;
-    private int _height;
-
-    // Keep delegates alive to prevent GC collection while VLC is using them
     private readonly MediaPlayer.LibVLCVideoFormatCb _formatCb;
     private readonly MediaPlayer.LibVLCVideoCleanupCb _cleanupCb;
     private readonly MediaPlayer.LibVLCVideoLockCb _lockCb;
     private readonly MediaPlayer.LibVLCVideoUnlockCb _unlockCb;
     private readonly MediaPlayer.LibVLCVideoDisplayCb _displayCb;
+
+    private byte[]? _pixelBuffer;
+    private GCHandle _bufferHandle;
+    private int _width;
+    private int _height;
 
     public event EventHandler? Playing;
     public event EventHandler? EncounteredError;
@@ -39,20 +38,18 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
                 onError(text ?? title ?? "Unknown error");
                 return Task.CompletedTask;
             },
-            login: (dialog, title, text, defaultUsername, askStore, token) =>
+            login: (dialog, _, _, _, _, _) =>
             {
                 dialog.Dismiss();
                 return Task.CompletedTask;
             },
-            question: (dialog, title, text, type, cancel, first, second, token) =>
+            question: (dialog, _, _, _, _, _, _, _) =>
             {
                 dialog.PostAction(1);
                 return Task.CompletedTask;
             },
-            displayProgress: (dialog, title, text, indeterminate, position, cancelText, token) =>
-                Task.CompletedTask,
-            updateProgress: (dialog, position, text) =>
-                Task.CompletedTask
+            displayProgress: (_, _, _, _, _, _, _) => Task.CompletedTask,
+            updateProgress: (_, _, _) => Task.CompletedTask
         );
 
         _media = new Media(libVlc, new Uri(url));
@@ -83,6 +80,14 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
     public void Play() => _mediaPlayer.Play();
 
     public void Stop() => _mediaPlayer.Stop();
+
+    public void Dispose()
+    {
+        _mediaPlayer.Stop();
+        _mediaPlayer.Dispose();
+        _media.Dispose();
+        ReleaseBuffer();
+    }
 
     private uint OnVideoFormat(ref IntPtr opaque, IntPtr chroma, ref uint width, ref uint height,
         ref uint pitches, ref uint lines)
@@ -138,13 +143,5 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
         if (_bufferHandle.IsAllocated)
             _bufferHandle.Free();
         _pixelBuffer = null;
-    }
-
-    public void Dispose()
-    {
-        _mediaPlayer.Stop();
-        _mediaPlayer.Dispose();
-        _media.Dispose();
-        ReleaseBuffer();
     }
 }

@@ -1,6 +1,7 @@
 using H.NotifyIcon;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using System.Collections.Specialized;
@@ -10,7 +11,6 @@ using Surveil.Domain.Cameras;
 using Surveil.Services.Interfaces;
 using Surveil.ViewModels;
 using Windows.Graphics;
-using Microsoft.UI.Xaml;
 using WinRT.Interop;
 
 namespace Surveil.Views;
@@ -20,9 +20,9 @@ public sealed partial class MainWindow
     private const int WindowWidth = 1350;
     private const int WindowHeight = 800;
 
-    public MainViewModel ViewModel { get; }
-
     private bool _isExiting;
+
+    public MainViewModel ViewModel { get; }
 
     public MainWindow(
         ICameraProvider apiClient,
@@ -54,6 +54,35 @@ public sealed partial class MainWindow
         TaskBarIcon.ForceCreate();
     }
 
+    public void BringToFront()
+    {
+        this.Show();
+        this.ShowInTaskbar();
+        Activate();
+        SetForegroundWindow(WindowNative.GetWindowHandle(this));
+    }
+
+    public void ShowFromBackground() => DispatcherQueue.TryEnqueue(BringToFront);
+
+    public void ExitApplication()
+    {
+        _isExiting = true;
+        this.Hide();
+        ViewModel.Dispose();
+        TaskBarIcon.Dispose();
+        Microsoft.UI.Xaml.Application.Current.Exit();
+    }
+
+    private void ResizeAndCenter()
+    {
+        var display = DisplayArea.Primary;
+        var x = (display.OuterBounds.Width - WindowWidth) / 2;
+        var y = (display.OuterBounds.Height - WindowHeight) / 2;
+
+        AppWindow.MoveAndResize(new RectInt32(x, y, WindowWidth, WindowHeight));
+        AppWindow.TitleBar.IconShowOptions = IconShowOptions.HideIconAndSystemMenu;
+    }
+
     private void OnCamerasChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.Action == NotifyCollectionChangedAction.Reset)
@@ -62,14 +91,14 @@ public sealed partial class MainWindow
             return;
         }
 
-        if (e.Action != NotifyCollectionChangedAction.Add) return;
+        if (e.Action != NotifyCollectionChangedAction.Add || e.NewItems is null) return;
 
-        foreach (Camera camera in e.NewItems!)
+        foreach (Camera camera in e.NewItems)
         {
             var item = new NavigationViewItem
             {
                 Content = camera.Name,
-                Tag     = camera
+                Tag = camera
             };
             ToolTipService.SetToolTip(item, camera.Name);
             CamerasGroup.MenuItems.Add(item);
@@ -90,15 +119,6 @@ public sealed partial class MainWindow
         ContentFrame.Navigate(typeof(CameraView), camera, new SuppressNavigationTransitionInfo());
     }
 
-    public void BringToFront()
-    {
-        var hwnd = WindowNative.GetWindowHandle(this);
-        ShowWindow(hwnd, 9);
-        SetForegroundWindow(hwnd);
-    }
-
-    public void ShowFromBackground() => DispatcherQueue.TryEnqueue(BringToFront);
-
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
         if (_isExiting) return;
@@ -106,28 +126,6 @@ public sealed partial class MainWindow
         args.Handled = true;
         this.Hide();
     }
-
-    public void ExitApplication()
-    {
-        _isExiting = true;
-        this.Hide();
-        ViewModel.Dispose();
-        TaskBarIcon.Dispose();
-        Microsoft.UI.Xaml.Application.Current.Exit();
-    }
-
-    private void ResizeAndCenter()
-    {
-        var appWindow = AppWindow.GetFromWindowId(AppWindow.Id);
-        var display  = DisplayArea.Primary;
-        var x = (display.OuterBounds.Width  - WindowWidth)  / 2;
-        var y = (display.OuterBounds.Height - WindowHeight) / 2;
-        appWindow.MoveAndResize(new RectInt32(x, y, WindowWidth, WindowHeight));
-        appWindow.TitleBar.IconShowOptions = IconShowOptions.HideIconAndSystemMenu;
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(nint hWnd);

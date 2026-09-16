@@ -12,8 +12,6 @@ public abstract record ProtectEvent(
     string DeviceId,
     ProtectEventUpdateType UpdateType);
 
-// ── Camera events ────────────────────────────────────────────────────────────
-
 public sealed record MotionEvent(
     string Id,
     long Start,
@@ -40,7 +38,6 @@ public sealed record SmartDetectLineEvent(
     IReadOnlyList<string> SmartDetectTypes)
     : ProtectEvent(Id, "smartDetectLine", Start, End, DeviceId, UpdateType);
 
-/// <summary>Camera has detected loitering in a zone.</summary>
 public sealed record SmartDetectLoiterZoneEvent(
     string Id,
     long Start,
@@ -59,8 +56,6 @@ public sealed record SmartAudioDetectEvent(
     IReadOnlyList<string> SmartDetectTypes)
     : ProtectEvent(Id, "smartAudioDetect", Start, End, DeviceId, UpdateType);
 
-// ── Doorbell ─────────────────────────────────────────────────────────────────
-
 public sealed record RingEvent(
     string Id,
     long Start,
@@ -69,17 +64,12 @@ public sealed record RingEvent(
     ProtectEventUpdateType UpdateType)
     : ProtectEvent(Id, "ring", Start, End, DeviceId, UpdateType);
 
-// ── Floodlight ────────────────────────────────────────────────────────────────
-
-/// <summary>Floodlight has encountered motion. Note: the API does not emit an end timestamp.</summary>
 public sealed record LightMotionEvent(
     string Id,
     long Start,
     string DeviceId,
     ProtectEventUpdateType UpdateType)
     : ProtectEvent(Id, "lightMotion", Start, End: null, DeviceId, UpdateType);
-
-// ── Sensor events ─────────────────────────────────────────────────────────────
 
 public sealed record SensorMotionEvent(
     string Id,
@@ -105,7 +95,6 @@ public sealed record SensorSmokeTestEvent(
     ProtectEventUpdateType UpdateType)
     : ProtectEvent(Id, "sensorSmokeTest", Start, End, DeviceId, UpdateType);
 
-/// <summary>Sensor alarm — alarmType: "smoke" | "CO" | "glassBreak"</summary>
 public sealed record SensorAlarmEvent(
     string Id,
     long Start,
@@ -115,7 +104,6 @@ public sealed record SensorAlarmEvent(
     string AlarmType)
     : ProtectEvent(Id, "sensorAlarm", Start, End, DeviceId, UpdateType);
 
-/// <summary>Sensor in a mount type has entered an open state — mountType: "door" | "window" | "garage" | "leak" | "none"</summary>
 public sealed record SensorOpenedEvent(
     string Id,
     long Start,
@@ -125,7 +113,6 @@ public sealed record SensorOpenedEvent(
     string MountType)
     : ProtectEvent(Id, "sensorOpened", Start, End, DeviceId, UpdateType);
 
-/// <summary>Sensor in a mount type has entered a closed state.</summary>
 public sealed record SensorClosedEvent(
     string Id,
     long Start,
@@ -135,7 +122,6 @@ public sealed record SensorClosedEvent(
     string MountType)
     : ProtectEvent(Id, "sensorClosed", Start, End, DeviceId, UpdateType);
 
-/// <summary>Water leak detected — mountType: "door" | "window" | "garage" | "leak" | "none"</summary>
 public sealed record SensorWaterLeakEvent(
     string Id,
     long Start,
@@ -145,7 +131,6 @@ public sealed record SensorWaterLeakEvent(
     string MountType)
     : ProtectEvent(Id, "sensorWaterLeak", Start, End, DeviceId, UpdateType);
 
-/// <summary>Sensor battery level is getting low.</summary>
 public sealed record SensorBatteryLowEvent(
     string Id,
     long Start,
@@ -155,7 +140,6 @@ public sealed record SensorBatteryLowEvent(
     double BatteryPercentage)
     : ProtectEvent(Id, "sensorBatteryLow", Start, End, DeviceId, UpdateType);
 
-/// <summary>Sensor metric went out of range — sensorType: "temperature" | "light" | "humidity"; status: "neutral" | "low" | "safe" | "high" | "unknown"</summary>
 public sealed record SensorExtremeValuesEvent(
     string Id,
     long Start,
@@ -166,8 +150,6 @@ public sealed record SensorExtremeValuesEvent(
     double SensorValue,
     string Status)
     : ProtectEvent(Id, "sensorExtremeValues", Start, End, DeviceId, UpdateType);
-
-// ── Fallback ─────────────────────────────────────────────────────────────────
 
 public sealed record UnknownEvent(
     string Id,

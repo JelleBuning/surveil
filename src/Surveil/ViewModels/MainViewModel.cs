@@ -24,14 +24,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly CancellationTokenSource _cts = new();
 
-    private Camera? _selectedCamera;
-
     public ObservableCollection<Camera> Cameras { get; } = [];
 
     public Camera? SelectedCamera
     {
-        get => _selectedCamera;
-        set => SetProperty(ref _selectedCamera, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
     public MainViewModel(
@@ -57,7 +55,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void OnSettingsChanged(AppSettings settings)
     {
-        _dispatcherQueue.TryEnqueue(() => Cameras.Clear());
+        _dispatcherQueue.TryEnqueue(Cameras.Clear);
         _ = InitializeCamerasAsync(_cts.Token);
     }
 
@@ -86,7 +84,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             await foreach (var @event in _eventStream.SubscribeAsync(ct))
-                _notifier.Notify(@event, _selectedCamera?.Name ?? "Unknown Camera");
+                _notifier.Notify(@event, SelectedCamera?.Name ?? "Unknown Camera");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -96,10 +94,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    public void LeftClick() => _mainWindow.BringToFront();
+    private void LeftClick() => _mainWindow.BringToFront();
 
     [RelayCommand]
-    public void Exit() => _mainWindow.ExitApplication();
+    private void Exit() => _mainWindow.ExitApplication();
 
     public void Dispose()
     {

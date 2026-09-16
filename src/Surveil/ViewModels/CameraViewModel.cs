@@ -57,11 +57,11 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
             UpdateStatus($"Connecting to {camera.Name}...");
 
             var streams = await _apiClient.GetRtspsStreamsAsync(camera.Id, ct);
-            var stream  = streams.FirstOrDefault()
-                          ?? await _apiClient.CreateRtspsStreamAsync(camera.Id, ct);
+            var stream = streams.FirstOrDefault()
+                         ?? await _apiClient.CreateRtspsStreamAsync(camera.Id, ct);
 
             _player = new RtspVideoPlayer(stream.Url);
-            _player.FrameReady    += OnFrameReady;
+            _player.FrameReady += OnFrameReady;
             _player.StatusChanged += OnStatusChanged;
             await Task.Run(_player.Start, ct);
         }
@@ -113,15 +113,12 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
 
     private WriteableBitmap EnsureBitmap(int width, int height)
     {
-        var bitmap = VideoSource;
+        if (VideoSource is { } bitmap && bitmap.PixelWidth == width && bitmap.PixelHeight == height)
+            return bitmap;
 
-        if (bitmap is null || bitmap.PixelWidth != width || bitmap.PixelHeight != height)
-        {
-            bitmap = new WriteableBitmap(width, height);
-            VideoSource = bitmap;
-        }
-
-        return bitmap;
+        var created = new WriteableBitmap(width, height);
+        VideoSource = created;
+        return created;
     }
 
     public void Dispose()
@@ -131,7 +128,7 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
 
         if (_player is not null)
         {
-            _player.FrameReady    -= OnFrameReady;
+            _player.FrameReady -= OnFrameReady;
             _player.StatusChanged -= OnStatusChanged;
             _player.Dispose();
         }

@@ -10,7 +10,7 @@ namespace Surveil.Infrastructure.Http;
 
 public sealed class ReloadableCameraProvider : ICameraProvider
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly IReadOnlyList<ICameraProviderFactory> _factories;
     private ICameraProvider _current;
 
@@ -29,17 +29,6 @@ public sealed class ReloadableCameraProvider : ICameraProvider
         };
     }
 
-    private ICameraProvider Build(AppSettings settings)
-    {
-        var factory = _factories.FirstOrDefault(f => f.ProviderType == settings.SelectedProvider);
-        return factory?.Create(settings) ?? new NoOpCameraProvider();
-    }
-
-    private ICameraProvider Current
-    {
-        get { lock (_lock) return _current; }
-    }
-
     public Task<IReadOnlyList<Camera>> GetCamerasAsync(CancellationToken ct = default) =>
         Current.GetCamerasAsync(ct);
 
@@ -48,4 +37,15 @@ public sealed class ReloadableCameraProvider : ICameraProvider
 
     public Task<RtspsStream> CreateRtspsStreamAsync(string cameraId, CancellationToken ct = default) =>
         Current.CreateRtspsStreamAsync(cameraId, ct);
+
+    private ICameraProvider Current
+    {
+        get { lock (_lock) return _current; }
+    }
+
+    private ICameraProvider Build(AppSettings settings)
+    {
+        var factory = _factories.FirstOrDefault(f => f.ProviderType == settings.SelectedProvider);
+        return factory?.Create(settings) ?? new NoOpCameraProvider();
+    }
 }

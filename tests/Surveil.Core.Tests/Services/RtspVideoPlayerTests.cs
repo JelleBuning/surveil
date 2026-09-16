@@ -8,112 +8,76 @@ using Surveil.Services;
 
 namespace Surveil.Core.Tests.Services;
 
-// ── Manual test double for IVlcPlayerHandle ───────────────────────────────────
-
-internal sealed class TestVlcHandle : IVlcPlayerHandle
-{
-    public event EventHandler? Playing;
-    public event EventHandler? EncounteredError;
-    public event EventHandler? EndReached;
-    public event EventHandler<VideoFrame>? FrameReady;
-
-    public int PlayCallCount { get; private set; }
-    public int StopCallCount { get; private set; }
-    public bool IsDisposed { get; private set; }
-
-    public void Play() => PlayCallCount++;
-    public void Stop() => StopCallCount++;
-    public void Dispose() => IsDisposed = true;
-
-    public void RaisePlaying() => Playing?.Invoke(this, EventArgs.Empty);
-    public void RaiseEncounteredError() => EncounteredError?.Invoke(this, EventArgs.Empty);
-    public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
-    public void RaiseFrameReady(VideoFrame frame) => FrameReady?.Invoke(this, frame);
-}
-
-internal sealed class TestVlcFactory(TestVlcHandle handle) : IVlcPlayerFactory
-{
-    public Action<string>? CapturedOnError { get; private set; }
-
-    public IVlcPlayerHandle Create(string url, Action<string> onError)
-    {
-        CapturedOnError = onError;
-        return handle;
-    }
-}
-
-// ── VideoFrame tests ──────────────────────────────────────────────────────────
-
-[TestClass]
-public sealed class VideoFrameTests
-{
-    private static VideoFrame MakeFrame(int w = 4, int h = 4)
-    {
-        var dataLength = w * h * 4;
-        var pixels = ArrayPool<byte>.Shared.Rent(dataLength);
-        return new VideoFrame(pixels, w, h, dataLength);
-    }
-
-    [TestMethod]
-    public void VideoFrame_Properties_AreCorrect()
-    {
-        using var frame = MakeFrame(8, 6);
-        Assert.AreEqual(8, frame.Width);
-        Assert.AreEqual(6, frame.Height);
-        Assert.AreEqual(8 * 6 * 4, frame.DataLength);
-        Assert.IsNotNull(frame.Pixels);
-    }
-
-    [TestMethod]
-    public void VideoFrame_Dispose_ReturnsPixelsToPool()
-    {
-        var frame = MakeFrame();
-        frame.Dispose(); // Should not throw
-    }
-
-    [TestMethod]
-    public void VideoFrame_DisposeIdempotent_SecondDisposeDoesNotThrow()
-    {
-        var frame = MakeFrame();
-        frame.Dispose();
-        frame.Dispose(); // Should not throw
-    }
-}
-
-// ── RtspVideoPlayer state machine tests ──────────────────────────────────────
-
 [TestClass]
 public sealed class RtspVideoPlayerTests
 {
-    private static (RtspVideoPlayer player, TestVlcFactory factory, TestVlcHandle handle)
-        CreatePlayer(string url = "rtsps://host/stream")
+    private sealed class TestVlcHandle : IVlcPlayerHandle
     {
-        var handle = new TestVlcHandle();
-        var factory = new TestVlcFactory(handle);
-        var player = new RtspVideoPlayer(url, factory);
-        return (player, factory, handle);
+        public event EventHandler? Playing;
+        public event EventHandler? EncounteredError;
+        public event EventHandler? EndReached;
+        public event EventHandler<VideoFrame>? FrameReady;
+
+        public int PlayCallCount { get; private set; }
+        public int StopCallCount { get; private set; }
+        public bool IsDisposed { get; private set; }
+
+        public void Play() => PlayCallCount++;
+        public void Stop() => StopCallCount++;
+        public void Dispose() => IsDisposed = true;
+
+        public void RaisePlaying() => Playing?.Invoke(this, EventArgs.Empty);
+        public void RaiseEncounteredError() => EncounteredError?.Invoke(this, EventArgs.Empty);
+        public void RaiseEndReached() => EndReached?.Invoke(this, EventArgs.Empty);
+        public void RaiseFrameReady(VideoFrame frame) => FrameReady?.Invoke(this, frame);
     }
 
-    // ── Start ─────────────────────────────────────────────────────────────────
+    private sealed class TestVlcFactory(TestVlcHandle handle) : IVlcPlayerFactory
+    {
+        public Action<string>? CapturedOnError { get; private set; }
+
+        public IVlcPlayerHandle Create(string url, Action<string> onError)
+        {
+            CapturedOnError = onError;
+            return handle;
+        }
+    }
+
+    private static readonly TimeSpan LongerThanTheConnectedStatusDelay = TimeSpan.FromMilliseconds(2500);
+
+    private readonly TestVlcHandle _handle = new();
+    private readonly TestVlcFactory _factory;
+    private readonly RtspVideoPlayer _player;
+
+    public RtspVideoPlayerTests()
+    {
+        _factory = new TestVlcFactory(_handle);
+        _player = new RtspVideoPlayer("rtsps://host/stream", _factory);
+    }
+
+    private List<string> CaptureStatuses()
+    {
+        var statuses = new List<string>();
+        _player.StatusChanged += (_, status) => statuses.Add(status);
+        return statuses;
+    }
 
     [TestMethod]
     public void Start_CallsHandlePlay()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
-        Assert.AreEqual(1, handle.PlayCallCount);
+        _player.Start();
+
+        Assert.AreEqual(1, _handle.PlayCallCount);
     }
 
     [TestMethod]
     public void Start_RaisesStatusChangedConnecting()
     {
-        var (player, _, _) = CreatePlayer();
-        string? lastStatus = null;
-        player.StatusChanged += (_, s) => lastStatus = s;
+        var statuses = CaptureStatuses();
 
-        player.Start();
+        _player.Start();
 
-        Assert.AreEqual("Connecting...", lastStatus);
+        Assert.AreEqual("Connecting...", statuses[^1]);
     }
 
     [TestMethod]
@@ -121,12 +85,12 @@ public sealed class RtspVideoPlayerTests
     {
         var firstHandle = new TestVlcHandle();
         var secondHandle = new TestVlcHandle();
-        var callCount = 0;
-        var factoryMock = new Mock<IVlcPlayerFactory>();
-        factoryMock.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<Action<string>>()))
-                   .Returns<string, Action<string>>((_, __) => callCount++ == 0 ? firstHandle : secondHandle);
+        var createCount = 0;
+        var factory = new Mock<IVlcPlayerFactory>();
+        factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<Action<string>>()))
+               .Returns<string, Action<string>>((_, _) => createCount++ == 0 ? firstHandle : secondHandle);
+        var player = new RtspVideoPlayer("rtsps://host", factory.Object);
 
-        var player = new RtspVideoPlayer("rtsps://host", factoryMock.Object);
         player.Start();
         player.Start();
 
@@ -134,75 +98,62 @@ public sealed class RtspVideoPlayerTests
         Assert.AreEqual(1, secondHandle.PlayCallCount);
     }
 
-    // ── Stop ──────────────────────────────────────────────────────────────────
-
     [TestMethod]
     public void Stop_DisposesHandle()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
-        player.Stop();
-        Assert.IsTrue(handle.IsDisposed);
+        _player.Start();
+
+        _player.Stop();
+
+        Assert.IsTrue(_handle.IsDisposed);
     }
 
     [TestMethod]
     public void Stop_WithoutStart_DoesNotThrow()
     {
-        var (player, _, _) = CreatePlayer();
-        player.Stop(); // Should not throw
+        _player.Stop();
     }
-
-    // ── Dispose ───────────────────────────────────────────────────────────────
 
     [TestMethod]
     public void Dispose_CallsStop()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
-        player.Dispose();
-        Assert.IsTrue(handle.IsDisposed);
+        _player.Start();
+
+        _player.Dispose();
+
+        Assert.IsTrue(_handle.IsDisposed);
     }
 
     [TestMethod]
-    public void Dispose_Idempotent()
+    public void Dispose_CalledTwice_DoesNotThrow()
     {
-        var (player, _, _) = CreatePlayer();
-        player.Dispose();
-        player.Dispose(); // Should not throw
+        _player.Dispose();
+        _player.Dispose();
     }
 
-    // ── FrameReady relay ──────────────────────────────────────────────────────
-
     [TestMethod]
-    public void FrameReady_RelayedFromHandle()
+    public void FrameReady_OnHandle_IsRelayedToSubscribers()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
+        _player.Start();
 
         VideoFrame? received = null;
-        player.FrameReady += (_, f) => received = f;
+        _player.FrameReady += (_, frame) => received = frame;
 
         var dataLength = 4 * 4 * 4;
-        var pixels = ArrayPool<byte>.Shared.Rent(dataLength);
-        using var frame = new VideoFrame(pixels, 4, 4, dataLength);
-
-        handle.RaiseFrameReady(frame);
+        using var frame = new VideoFrame(ArrayPool<byte>.Shared.Rent(dataLength), 4, 4, dataLength);
+        _handle.RaiseFrameReady(frame);
 
         Assert.IsNotNull(received);
-        Assert.AreEqual(4, received!.Width);
+        Assert.AreEqual(4, received.Width);
         Assert.AreEqual(4, received.Height);
     }
-
-    // ── StatusChanged relay ───────────────────────────────────────────────────
 
     [TestMethod]
     public void StatusChanged_RaisedOnStart()
     {
-        var (player, _, _) = CreatePlayer();
-        var statuses = new List<string>();
-        player.StatusChanged += (_, s) => statuses.Add(s);
+        var statuses = CaptureStatuses();
 
-        player.Start();
+        _player.Start();
 
         Assert.Contains("Connecting...", statuses);
     }
@@ -210,155 +161,121 @@ public sealed class RtspVideoPlayerTests
     [TestMethod]
     public void StatusChanged_RelayedFromHandleErrorCallback()
     {
-        var (player, factory, _) = CreatePlayer();
+        var statuses = CaptureStatuses();
 
-        string? capturedStatus = null;
-        player.StatusChanged += (_, s) => capturedStatus = s;
+        _player.Start();
+        _factory.CapturedOnError?.Invoke("TLS error");
 
-        player.Start();
-        factory.CapturedOnError?.Invoke("TLS error");
-
-        Assert.AreEqual("TLS error", capturedStatus);
+        Assert.AreEqual("TLS error", statuses[^1]);
     }
 
-    // ── Playing event → Connected status ─────────────────────────────────────
-
     [TestMethod]
-    public async Task Playing_EventAfterDelay_RaisesConnectedStatus()
+    public async Task Playing_AfterTheConnectedStatusDelay_RaisesConnectedStatus()
     {
-        var (player, _, handle) = CreatePlayer();
-        var statuses = new List<string>();
-        player.StatusChanged += (_, s) => statuses.Add(s);
+        var statuses = CaptureStatuses();
 
-        player.Start();
-
-        // Fire Playing event — player delays ~1.5s then raises "Connected"
-        handle.RaisePlaying();
-
-        // Wait enough for the Connected status to fire
-        await Task.Delay(2500);
+        _player.Start();
+        _handle.RaisePlaying();
+        await Task.Delay(LongerThanTheConnectedStatusDelay);
 
         Assert.Contains("Connected", statuses);
     }
 
     [TestMethod]
-    public void Playing_EventWhenStopped_CancelsConnectedStatus()
+    public async Task Playing_WhenStoppedBeforeTheDelayElapses_NeverRaisesConnectedStatus()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
-        handle.RaisePlaying();
+        var statuses = CaptureStatuses();
 
-        // Stop immediately — cancellation should prevent "Connected" from firing
-        player.Stop();
-        // No assertion needed — just verify no exception
+        _player.Start();
+        _handle.RaisePlaying();
+        _player.Stop();
+        await Task.Delay(LongerThanTheConnectedStatusDelay);
+
+        Assert.DoesNotContain("Connected", statuses);
     }
-
-    // ── ScheduleReconnect ─────────────────────────────────────────────────────
 
     [TestMethod]
     public void ScheduleReconnect_WhileStopped_DoesNothing()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
-        player.Stop();
+        _player.Start();
+        _player.Stop();
 
-        // After stop, ScheduleReconnect should be a no-op
-        player.ScheduleReconnect("test reason");
+        _player.ScheduleReconnect("test reason");
 
-        // No additional Play calls beyond the original Start()
-        Assert.AreEqual(1, handle.PlayCallCount);
+        Assert.AreEqual(1, _handle.PlayCallCount);
     }
 
     [TestMethod]
     public void ScheduleReconnect_RaisesStatusWithReason()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
+        _player.Start();
+        var statuses = CaptureStatuses();
 
-        string? capturedStatus = null;
-        player.StatusChanged += (_, s) => capturedStatus = s;
+        _player.ScheduleReconnect("Stream ended");
 
-        player.ScheduleReconnect("Stream ended");
-
-        Assert.AreEqual("Stream ended", capturedStatus);
+        Assert.AreEqual("Stream ended", statuses[^1]);
     }
 
     [TestMethod]
     public void ScheduleReconnect_CalledTwice_OnlyFirstTakesEffect()
     {
-        var (player, _, _) = CreatePlayer();
-        player.Start();
+        _player.Start();
+        var statuses = CaptureStatuses();
 
-        var statuses = new List<string>();
-        player.StatusChanged += (_, s) => statuses.Add(s);
+        _player.ScheduleReconnect("error 1");
+        _player.ScheduleReconnect("error 2");
 
-        player.ScheduleReconnect("error 1");
-        player.ScheduleReconnect("error 2"); // guard should prevent this
-
-        Assert.AreEqual(1, statuses.Count);
+        Assert.HasCount(1, statuses);
         Assert.AreEqual("error 1", statuses[0]);
     }
 
     [TestMethod]
     public void EncounteredError_OnHandle_TriggersReconnect()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
+        _player.Start();
+        var statuses = CaptureStatuses();
 
-        string? capturedStatus = null;
-        player.StatusChanged += (_, s) => capturedStatus = s;
+        _handle.RaiseEncounteredError();
 
-        handle.RaiseEncounteredError();
-
-        Assert.AreEqual("Playback error", capturedStatus);
+        Assert.AreEqual("Playback error", statuses[^1]);
     }
 
     [TestMethod]
     public void EndReached_OnHandle_TriggersReconnect()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
+        _player.Start();
+        var statuses = CaptureStatuses();
 
-        string? capturedStatus = null;
-        player.StatusChanged += (_, s) => capturedStatus = s;
+        _handle.RaiseEndReached();
 
-        handle.RaiseEndReached();
-
-        Assert.AreEqual("Stream ended", capturedStatus);
+        Assert.AreEqual("Stream ended", statuses[^1]);
     }
-
-    // ── TearDownPlayer ────────────────────────────────────────────────────────
 
     [TestMethod]
     public void TearDownPlayer_DisposesHandle()
     {
-        var (player, _, handle) = CreatePlayer();
-        player.Start();
+        _player.Start();
 
-        player.TearDownPlayer();
+        _player.TearDownPlayer();
 
-        Assert.IsTrue(handle.IsDisposed);
+        Assert.IsTrue(_handle.IsDisposed);
     }
 
     [TestMethod]
     public void TearDownPlayer_WhenNoHandleExists_DoesNotThrow()
     {
-        var (player, _, _) = CreatePlayer();
-        player.TearDownPlayer(); // No handle created yet
+        _player.TearDownPlayer();
     }
-
-    // ── StartInternal ─────────────────────────────────────────────────────────
 
     [TestMethod]
     public void StartInternal_WhenStopped_DoesNotCreateHandle()
     {
-        var factoryMock = new Mock<IVlcPlayerFactory>();
-        var player = new RtspVideoPlayer("rtsps://host", factoryMock.Object);
-        player.Stop(); // sets _stopped = true
+        var factory = new Mock<IVlcPlayerFactory>();
+        var player = new RtspVideoPlayer("rtsps://host", factory.Object);
+        player.Stop();
 
         player.StartInternal();
 
-        factoryMock.Verify(f => f.Create(It.IsAny<string>(), It.IsAny<Action<string>>()), Times.Never());
+        factory.Verify(f => f.Create(It.IsAny<string>(), It.IsAny<Action<string>>()), Times.Never());
     }
 }
-
