@@ -1,16 +1,14 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using Microsoft.Extensions.Options;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
+using Surveil.Application.Settings;
 using Surveil.Domain.Cameras;
 using Surveil.Services;
 
@@ -23,7 +21,6 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
     private readonly SnapshotService _snapshotService;
     private readonly CancellationTokenSource _cts = new();
 
-    private WriteableBitmap? _videoBitmap;
     private bool _updatePending;
     private RtspVideoPlayer? _player;
 
@@ -42,17 +39,13 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
     public CameraViewModel(
         Camera camera,
         ICameraProvider apiClient,
-        IOptions<UnifiProtectOptions> options,
+        SnapshotOptions snapshot,
         DispatcherQueue dispatcherQueue)
     {
         _apiClient = apiClient;
         _dispatcherQueue = dispatcherQueue;
 
-        var snapshotPath = options.Value.SnapshotPath
-            ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Surveil", "snapshots", "snapshot.jpg");
-        _snapshotService = new SnapshotService(snapshotPath);
+        _snapshotService = new SnapshotService(snapshot.Path);
 
         _ = StartStreamAsync(camera, _cts.Token);
     }
@@ -98,10 +91,10 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
         {
             try
             {
-                EnsureBitmap(frame.Width, frame.Height);
-                using var stream = _videoBitmap!.PixelBuffer.AsStream();
+                var bitmap = EnsureBitmap(frame.Width, frame.Height);
+                using var stream = bitmap.PixelBuffer.AsStream();
                 stream.Write(frame.Pixels, 0, frame.DataLength);
-                _videoBitmap.Invalidate();
+                bitmap.Invalidate();
                 _snapshotService.CaptureFrame(frame.Width, frame.Height, frame.Pixels);
             }
             finally
@@ -118,13 +111,17 @@ public sealed class CameraViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void EnsureBitmap(int width, int height)
+    private WriteableBitmap EnsureBitmap(int width, int height)
     {
-        if (_videoBitmap is null || _videoBitmap.PixelWidth != width || _videoBitmap.PixelHeight != height)
+        var bitmap = VideoSource;
+
+        if (bitmap is null || bitmap.PixelWidth != width || bitmap.PixelHeight != height)
         {
-            _videoBitmap = new WriteableBitmap(width, height);
-            VideoSource = _videoBitmap;
+            bitmap = new WriteableBitmap(width, height);
+            VideoSource = bitmap;
         }
+
+        return bitmap;
     }
 
     public void Dispose()

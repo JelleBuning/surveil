@@ -7,13 +7,13 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
-using Surveil.Application.Options;
-using Surveil.Application.Settings;
 using Surveil.Domain.Events;
+using Surveil.Unifi;
+using Surveil.Application.Settings;
 using Surveil.Infrastructure.Settings;
-using Surveil.Infrastructure.WebSocket;
+using Surveil.Unifi.WebSocket;
 
-namespace Surveil.Core.Tests.Infrastructure;
+namespace Surveil.Unifi.Tests;
 
 [TestClass]
 public sealed class ProtectEventStreamParseTests
@@ -327,7 +327,7 @@ public sealed class ProtectEventStreamParseTests
             BaseUrl = "https://192.168.0.1/proxy/protect/api",
             ApiKey = "key"
         });
-        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object);
+        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object, TestEventSettings.AllEnabled());
         var uri = stream.BuildWebSocketUri();
         Assert.AreEqual("wss", uri.Scheme);
         Assert.AreEqual("192.168.0.1", uri.Host);
@@ -342,7 +342,7 @@ public sealed class ProtectEventStreamParseTests
             BaseUrl = "http://192.168.0.1/api",
             ApiKey = "key"
         });
-        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object);
+        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object, TestEventSettings.AllEnabled());
         var uri = stream.BuildWebSocketUri();
         Assert.AreEqual("ws", uri.Scheme);
     }
@@ -355,7 +355,7 @@ public sealed class ProtectEventStreamParseTests
             BaseUrl = "https://host/api/",
             ApiKey = "key"
         });
-        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object);
+        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object, TestEventSettings.AllEnabled());
         var uri = stream.BuildWebSocketUri();
         Assert.AreEqual("wss", uri.Scheme);
         Assert.IsTrue(uri.AbsolutePath.EndsWith("v1/subscribe/events"));
@@ -369,12 +369,12 @@ public sealed class ProtectEventStreamParseTests
         // Arrange
         var options = Options.Create(new UnifiProtectOptions { BaseUrl = "https://host", ApiKey = "key" });
         var wsFactoryMock = new Mock<IWebSocketFactory>();
-        var stream = new ProtectEventStream(options, wsFactoryMock.Object);
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, TestEventSettings.AllEnabled());
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         // Act
-        var events = new List<ProtectEvent>();
+        var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
             events.Add(e);
 
@@ -396,7 +396,7 @@ public sealed class ProtectEventStreamParseTests
         wsMock.Setup(w => w.ConnectAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()))
               .Returns(Task.FromException(new System.Net.WebSockets.WebSocketException("refused")));
 
-        var stream = new ProtectEventStream(options, wsFactoryMock.Object);
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, TestEventSettings.AllEnabled());
         using var cts = new CancellationTokenSource();
 
         // Cancel after first failed connect + delay
@@ -406,7 +406,7 @@ public sealed class ProtectEventStreamParseTests
             cts.Cancel();
         });
 
-        var events = new List<ProtectEvent>();
+        var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
             events.Add(e);
 
@@ -431,9 +431,9 @@ public sealed class ProtectEventStreamParseTests
                   return Task.FromCanceled(ct);
               });
 
-        var stream = new ProtectEventStream(options, wsFactoryMock.Object);
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, TestEventSettings.AllEnabled());
 
-        var events = new List<ProtectEvent>();
+        var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
             events.Add(e);
 
@@ -466,11 +466,11 @@ public sealed class ProtectEventStreamParseTests
                       new ValueWebSocketReceiveResult(bytes.Length, WebSocketMessageType.Text, true));
               });
 
-        var stream = new ProtectEventStream(options, wsFactoryMock.Object);
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, TestEventSettings.AllEnabled());
         using var cts = new CancellationTokenSource(5000);
 
         // Act
-        var events = new List<ProtectEvent>();
+        var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
         {
             events.Add(e);
@@ -479,7 +479,9 @@ public sealed class ProtectEventStreamParseTests
 
         // Assert
         Assert.ContainsSingle(events);
-        Assert.IsInstanceOfType<RingEvent>(events[0]);
+        Assert.AreEqual("ev1", events[0].Id);
+        Assert.AreEqual("dev1", events[0].DeviceId);
+        Assert.AreEqual("Doorbell ring", events[0].Description);
     }
 
     [TestMethod]
@@ -503,10 +505,10 @@ public sealed class ProtectEventStreamParseTests
                       new ValueWebSocketReceiveResult(0, WebSocketMessageType.Close, true));
               });
 
-        var stream = new ProtectEventStream(options, wsFactoryMock.Object);
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, TestEventSettings.AllEnabled());
         using var cts = new CancellationTokenSource(300);
 
-        var events = new List<ProtectEvent>();
+        var events = new List<CameraEvent>();
         await foreach (var e in stream.SubscribeAsync(cts.Token))
             events.Add(e);
 
@@ -522,7 +524,7 @@ public sealed class ProtectEventStreamParseTests
     {
         var options = Options.Create(new UnifiProtectOptions { BaseUrl = "https://host1", ApiKey = "key1" });
         var notifier = new SettingsChangeNotifier();
-        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object, notifier);
+        var stream = new ProtectEventStream(options, new Mock<IWebSocketFactory>().Object, TestEventSettings.AllEnabled(), notifier);
 
         Assert.AreEqual("host1", stream.BuildWebSocketUri().Host);
 
@@ -574,7 +576,7 @@ public sealed class ProtectEventStreamParseTests
             return wsMock.Object;
         });
 
-        var stream = new ProtectEventStream(options, wsFactoryMock.Object, notifier);
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, TestEventSettings.AllEnabled(), notifier);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         var readTask = Task.Run(async () =>
@@ -594,4 +596,96 @@ public sealed class ProtectEventStreamParseTests
 
         CollectionAssert.Contains(capturedApiKeys, "new-key");
     }
+}
+
+[TestClass]
+public sealed class ProtectEventStreamFilteringTests
+{
+    private static async Task<List<CameraEvent>> CollectAsync(string json, EventNotificationSettings settings)
+    {
+        var options = Options.Create(new UnifiProtectOptions { BaseUrl = "https://host", ApiKey = "key" });
+        var wsFactoryMock = new Mock<IWebSocketFactory>();
+        var wsMock = new Mock<IWebSocketConnection>();
+        wsFactoryMock.Setup(f => f.Create(It.IsAny<string>())).Returns(wsMock.Object);
+        wsMock.Setup(w => w.ConnectAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var bytes = Encoding.UTF8.GetBytes(json);
+        var callCount = 0;
+        wsMock.SetupGet(w => w.State).Returns(() => callCount == 0 ? WebSocketState.Open : WebSocketState.Closed);
+        wsMock.Setup(w => w.ReceiveAsync(It.IsAny<Memory<byte>>(), It.IsAny<CancellationToken>()))
+              .Returns((Memory<byte> buffer, CancellationToken _) =>
+              {
+                  bytes.CopyTo(buffer);
+                  callCount++;
+                  return new ValueTask<ValueWebSocketReceiveResult>(
+                      new ValueWebSocketReceiveResult(bytes.Length, WebSocketMessageType.Text, true));
+              });
+
+        var stream = new ProtectEventStream(options, wsFactoryMock.Object, settings);
+        using var cts = new CancellationTokenSource(500);
+
+        var events = new List<CameraEvent>();
+        await foreach (var e in stream.SubscribeAsync(cts.Token))
+        {
+            events.Add(e);
+            break;
+        }
+
+        return events;
+    }
+
+    [TestMethod]
+    public async Task DisabledEventType_IsNotEmitted()
+    {
+        const string json = """{"type":"add","item":{"id":"ev1","type":"motion","start":1000,"device":"dev1"}}""";
+
+        var events = await CollectAsync(json, new EventNotificationSettings { Motion = false });
+
+        Assert.IsEmpty(events);
+    }
+
+    [TestMethod]
+    public async Task EnabledEventType_IsEmitted()
+    {
+        const string json = """{"type":"add","item":{"id":"ev1","type":"motion","start":1000,"device":"dev1"}}""";
+
+        var events = await CollectAsync(json, new EventNotificationSettings { Motion = true });
+
+        Assert.ContainsSingle(events);
+        Assert.AreEqual("Motion detected", events[0].Description);
+    }
+
+    [TestMethod]
+    public async Task NonNotifiableUpdate_IsNotEmitted()
+    {
+        const string json = """{"type":"update","item":{"id":"ev1","type":"motion","start":1000,"device":"dev1"}}""";
+
+        var events = await CollectAsync(json, TestEventSettings.AllEnabled());
+
+        Assert.IsEmpty(events);
+    }
+
+    [TestMethod]
+    public async Task RingUpdateWithoutEnd_IsEmitted()
+    {
+        const string json = """{"type":"update","item":{"id":"ev1","type":"ring","start":1000,"device":"dev1"}}""";
+
+        var events = await CollectAsync(json, TestEventSettings.AllEnabled());
+
+        Assert.ContainsSingle(events);
+        Assert.AreEqual("Doorbell ring", events[0].Description);
+    }
+}
+
+internal static class TestEventSettings
+{
+    internal static EventNotificationSettings AllEnabled() => new()
+    {
+        Motion = true, SmartDetectZone = true, SmartDetectLine = true,
+        SmartDetectLoiterZone = true, SmartAudioDetect = true, Ring = true,
+        LightMotion = true, SensorMotion = true, SensorTamper = true,
+        SensorSmokeTest = true, SensorAlarm = true, SensorOpened = true,
+        SensorClosed = true, SensorWaterLeak = true, SensorBatteryLow = true,
+        SensorExtremeValues = true
+    };
 }

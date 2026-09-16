@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Surveil.Domain.Events;
+namespace Surveil.Unifi;
 
 public enum ProtectEventUpdateType { Add, Update }
 

@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using System;
 using System.Collections.Generic;
@@ -11,10 +10,43 @@ using Surveil.Application.Settings;
 
 namespace Surveil.ViewModels;
 
-public partial class SettingsViewModel : ObservableObject
+public sealed class SettingsViewModel : ObservableObject
 {
+    private const string LaunchOnStartupDefaultDescription = "Start Surveil automatically when you sign in to Windows.";
     private readonly IAppSettingsRepository _repository;
     private readonly ISettingsChangeNotifier _notifier;
+    private readonly IStartupTaskService _startupTaskService;
+
+    private bool _isSyncingStartupStatus;
+    private readonly bool _isLoaded;
+
+    public bool LaunchOnStartup
+    {
+        get;
+        set
+        {
+            if (!SetProperty(ref field, value) || _isSyncingStartupStatus) return;
+
+            _ = ApplyLaunchOnStartupAsync(value);
+        }
+    }
+
+    public StartupTaskStatus StartupStatus
+    {
+        get;
+        private set
+        {
+            if (SetProperty(ref field, value))
+            {
+                OnPropertyChanged(nameof(IsLaunchOnStartupToggleEnabled));
+                OnPropertyChanged(nameof(LaunchOnStartupDescription));
+            }
+        }
+    } = StartupTaskStatus.Unavailable;
+
+    public bool IsLaunchOnStartupToggleEnabled => StartupStatus.CanUserChange();
+
+    public string LaunchOnStartupDescription => StartupStatus.GetRestrictionDescription() ?? LaunchOnStartupDefaultDescription;
 
     public IReadOnlyList<VideoProviderOption> AvailableProviders { get; } =
     [
@@ -27,11 +59,11 @@ public partial class SettingsViewModel : ObservableObject
         get;
         set
         {
-            if (SetProperty(ref field, value))
-            {
-                OnPropertyChanged(nameof(IsUnifiProviderSelected));
-                OnPropertyChanged(nameof(UnifiProviderVisibility));
-            }
+            if (!SetProperty(ref field, value)) return;
+
+            OnPropertyChanged(nameof(IsUnifiProviderSelected));
+            OnPropertyChanged(nameof(UnifiProviderVisibility));
+            SaveIfLoaded();
         }
     }
 
@@ -44,26 +76,20 @@ public partial class SettingsViewModel : ObservableObject
     public string BaseUrl
     {
         get;
-        set => SetProperty(ref field, value);
+        set { if (SetProperty(ref field, value)) SaveIfLoaded(); }
     } = string.Empty;
 
     public string ApiKey
     {
         get;
-        set => SetProperty(ref field, value);
+        set { if (SetProperty(ref field, value)) SaveIfLoaded(); }
     } = string.Empty;
 
     public string SnapshotPath
     {
         get;
-        set => SetProperty(ref field, value);
+        set { if (SetProperty(ref field, value)) SaveIfLoaded(); }
     } = string.Empty;
-
-    public bool ShowSuccess
-    {
-        get;
-        set => SetProperty(ref field, value);
-    }
 
     public bool ShowError
     {
@@ -80,23 +106,61 @@ public partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(
         AppSettings currentSettings,
         IAppSettingsRepository repository,
-        ISettingsChangeNotifier notifier)
+        ISettingsChangeNotifier notifier,
+        IStartupTaskService startupTaskService)
     {
-        _repository = repository;
-        _notifier   = notifier;
+        _repository         = repository;
+        _notifier           = notifier;
+        _startupTaskService = startupTaskService;
 
         SelectedProvider = AvailableProviders.FirstOrDefault(p => p.Type == currentSettings.SelectedProvider)
                             ?? AvailableProviders[0];
         BaseUrl          = currentSettings.UnifiProtect.BaseUrl;
         ApiKey           = currentSettings.UnifiProtect.ApiKey;
         SnapshotPath     = currentSettings.UnifiProtect.SnapshotPath ?? string.Empty;
+
+        _isLoaded = true;
     }
 
-    [RelayCommand]
+    public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        SyncStartupStatus(await _startupTaskService.GetStatusAsync(ct));
+    }
+
+    private async Task ApplyLaunchOnStartupAsync(bool enable)
+    {
+        var status = enable
+            ? await _startupTaskService.EnableAsync()
+            : await _startupTaskService.DisableAsync();
+
+        SyncStartupStatus(status);
+    }
+
+    private void SyncStartupStatus(StartupTaskStatus status)
+    {
+        StartupStatus = status;
+
+        _isSyncingStartupStatus = true;
+        try
+        {
+            LaunchOnStartup = status.IsEnabled();
+        }
+        finally
+        {
+            _isSyncingStartupStatus = false;
+        }
+    }
+
+    private void SaveIfLoaded()
+    {
+        if (!_isLoaded) return;
+
+        _ = SaveAsync(CancellationToken.None);
+    }
+
     private async Task SaveAsync(CancellationToken ct)
     {
-        ShowSuccess = false;
-        ShowError   = false;
+        ShowError = false;
 
         if (!Validate()) return;
 
@@ -113,7 +177,6 @@ public partial class SettingsViewModel : ObservableObject
 
         await _repository.SaveAsync(settings, ct);
         _notifier.NotifyChanged(settings);
-        ShowSuccess = true;
     }
 
     private bool Validate()
@@ -122,26 +185,21 @@ public partial class SettingsViewModel : ObservableObject
             return true;
 
         if (string.IsNullOrWhiteSpace(BaseUrl))
-        {
-            ErrorMessage = "Base URL is required.";
-            ShowError    = true;
-            return false;
-        }
+            return Invalid("Base URL is required.");
 
         if (!Uri.TryCreate(BaseUrl.Trim(), UriKind.Absolute, out _))
-        {
-            ErrorMessage = "Base URL must be a valid absolute URL (e.g. https://192.168.0.1).";
-            ShowError    = true;
-            return false;
-        }
+            return Invalid("Base URL must be a valid absolute URL (e.g. https://192.168.0.1).");
 
         if (string.IsNullOrWhiteSpace(ApiKey))
-        {
-            ErrorMessage = "API Key is required.";
-            ShowError    = true;
-            return false;
-        }
+            return Invalid("API Key is required.");
 
         return true;
+    }
+
+    private bool Invalid(string message)
+    {
+        ErrorMessage = message;
+        ShowError    = true;
+        return false;
     }
 }

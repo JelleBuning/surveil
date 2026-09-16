@@ -5,9 +5,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Surveil.Infrastructure.Http;
+using Surveil.Unifi;
 
-namespace Surveil.Core.Tests.Infrastructure;
+namespace Surveil.Unifi.Tests;
 
 /// <summary>Configurable stub for HttpMessageHandler.</summary>
 internal sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

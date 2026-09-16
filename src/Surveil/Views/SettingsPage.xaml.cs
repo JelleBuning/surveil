@@ -12,9 +12,13 @@ public sealed partial class SettingsPage : Page
         InitializeComponent();
     }
 
-    protected override void OnNavigatedTo(NavigationEventArgs e)
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        DataContext = Ioc.Default.GetRequiredService<SettingsViewModel>();
+
+        var viewModel = Ioc.Default.GetRequiredService<SettingsViewModel>();
+        DataContext = viewModel;
+
+        await viewModel.InitializeAsync();
     }
 }

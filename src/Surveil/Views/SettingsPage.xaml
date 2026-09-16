@@ -5,75 +5,84 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     mc:Ignorable="d">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel HorizontalAlignment="Left"
-                    Padding="32,24"
-                    Spacing="20"
-                    Width="600">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalScrollMode="Disabled">
 
-            <!-- Page header -->
-            <TextBlock Text="Settings"
-                       Style="{StaticResource TitleTextBlockStyle}" />
+        <Grid Padding="36,24,36,36">
+            <Grid MaxWidth="1000"
+                  HorizontalAlignment="Stretch">
 
-            <!-- Provider selector -->
-            <StackPanel Spacing="4">
-                <TextBlock Text="Video Provider"
-                           Style="{StaticResource SubtitleTextBlockStyle}" />
-                <TextBlock Text="Choose which system provides your camera feeds."
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           TextWrapping="Wrap" />
-                <ComboBox Margin="0,8,0,0"
-                          Header="Provider"
-                          ItemsSource="{Binding AvailableProviders}"
-                          SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
-                          DisplayMemberPath="DisplayName"
-                          HorizontalAlignment="Stretch"/>
-            </StackPanel>
+                <StackPanel Spacing="4">
 
-            <!-- UniFi Protect settings -->
-            <StackPanel Visibility="{Binding UnifiProviderVisibility}"
-                        Spacing="12">
+                    <TextBlock Text="Settings"
+                               Style="{StaticResource TitleTextBlockStyle}"
+                               Margin="0,0,0,20" />
 
-                <TextBlock Text="UniFi Protect Connection"
-                           Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="General"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,8" />
 
-                <TextBox Header="Base URL"
-                         PlaceholderText="https://192.168.0.1"
-                         Text="{Binding BaseUrl, Mode=TwoWay}"
-                         HorizontalAlignment="Stretch" />
+                    <controls:SettingsCard Header="Launch on startup"
+                                           Description="{Binding LaunchOnStartupDescription}"
+                                           IsEnabled="{Binding IsLaunchOnStartupToggleEnabled}">
+                        <ToggleSwitch IsOn="{Binding LaunchOnStartup, Mode=TwoWay}"
+                                      MinWidth="0" />
+                    </controls:SettingsCard>
 
-                <TextBox Header="API Key"
-                         PlaceholderText="Your UniFi Protect API key"
-                         Text="{Binding ApiKey, Mode=TwoWay}"
-                         HorizontalAlignment="Stretch" />
+                    <TextBlock Text="Video provider"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,28,0,8" />
 
-                <TextBox Header="Snapshot Path (optional)"
-                         PlaceholderText="Leave empty to use the default path"
-                         Text="{Binding SnapshotPath, Mode=TwoWay}"
-                         HorizontalAlignment="Stretch" />
-            </StackPanel>
+                    <controls:SettingsCard Header="Provider"
+                                           Description="Choose which system provides your camera feeds.">
+                        <ComboBox ItemsSource="{Binding AvailableProviders}"
+                                  SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
+                                  DisplayMemberPath="DisplayName"
+                                  Width="320" />
+                    </controls:SettingsCard>
 
-            <!-- Save button -->
-            <Button Content="Save Settings"
-                    Command="{Binding SaveCommand}"
-                    Style="{StaticResource AccentButtonStyle}" />
+                    <StackPanel Visibility="{Binding UnifiProviderVisibility}"
+                                Spacing="4">
 
-            <!-- Feedback: success -->
-            <InfoBar IsOpen="{Binding ShowSuccess, Mode=TwoWay}"
-                     Severity="Success"
-                     Title="Settings saved"
-                     Message=""
-                     IsClosable="True" />
+                        <TextBlock Text="UniFi Protect connection"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,28,0,8" />
 
-            <!-- Feedback: validation error -->
-            <InfoBar IsOpen="{Binding ShowError, Mode=TwoWay}"
-                     Severity="Error"
-                     Title="Validation error"
-                     Message="{Binding ErrorMessage}"
-                     IsClosable="True" />
+                        <controls:SettingsCard Header="Base URL"
+                                               Description="Address of your UniFi Protect controller.">
+                            <TextBox Text="{Binding BaseUrl, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     PlaceholderText="https://192.168.0.1"
+                                     Width="320" />
+                        </controls:SettingsCard>
 
-        </StackPanel>
+                        <controls:SettingsCard Header="API key"
+                                               Description="Used to authenticate with the controller.">
+                            <TextBox Text="{Binding ApiKey, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     PlaceholderText="Your UniFi Protect API key"
+                                     Width="320" />
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard Header="Snapshot path"
+                                               Description="Where event snapshots are written. Leave empty to use the default path.">
+                            <TextBox Text="{Binding SnapshotPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     PlaceholderText="Default path"
+                                     Width="320" />
+                        </controls:SettingsCard>
+                    </StackPanel>
+
+                    <InfoBar IsOpen="{Binding ShowError, Mode=TwoWay}"
+                             Severity="Error"
+                             Title="Not saved"
+                             Message="{Binding ErrorMessage}"
+                             IsClosable="True"
+                             Margin="0,16,0,0" />
+
+                </StackPanel>
+            </Grid>
+        </Grid>
     </ScrollViewer>
 </Page>

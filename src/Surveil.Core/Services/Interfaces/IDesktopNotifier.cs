@@ -4,5 +4,5 @@ namespace Surveil.Services.Interfaces;
 
 public interface IDesktopNotifier
 {
-    void Notify(ProtectEvent protectEvent, string cameraName);
+    void Notify(CameraEvent cameraEvent, string cameraName);
 }

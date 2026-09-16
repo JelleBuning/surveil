@@ -6,24 +6,21 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Application.Settings;
 using Surveil.Domain.Cameras;
-using Surveil.Domain.Events;
 using Surveil.Services.Interfaces;
 using Surveil.Views;
 
 namespace Surveil.ViewModels;
 
-public partial class MainViewModel : ObservableObject, IDisposable
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly MainWindow _mainWindow;
     private readonly ICameraProvider _apiClient;
-    private readonly IProtectEventStream _eventStream;
+    private readonly ICameraEventStream _eventStream;
     private readonly IDesktopNotifier _notifier;
     private readonly ISettingsChangeNotifier _settingsNotifier;
-    private readonly EventNotificationSettings _eventSettings;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly CancellationTokenSource _cts = new();
 
@@ -40,10 +37,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public MainViewModel(
         MainWindow mainWindow,
         ICameraProvider apiClient,
-        IProtectEventStream eventStream,
+        ICameraEventStream eventStream,
         IDesktopNotifier notifier,
         ISettingsChangeNotifier settingsNotifier,
-        EventNotificationSettings eventSettings,
         DispatcherQueue dispatcherQueue)
     {
         _mainWindow = mainWindow;
@@ -51,7 +47,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _eventStream = eventStream;
         _notifier = notifier;
         _settingsNotifier = settingsNotifier;
-        _eventSettings = eventSettings;
         _dispatcherQueue = dispatcherQueue;
 
         _settingsNotifier.SettingsChanged += OnSettingsChanged;
@@ -91,10 +86,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             await foreach (var @event in _eventStream.SubscribeAsync(ct))
-            {
-                if (_eventSettings.IsEnabled(@event) && IsNotifiableEvent(@event))
-                    _notifier.Notify(@event, _selectedCamera?.Name ?? "Unknown Camera");
-            }
+                _notifier.Notify(@event, _selectedCamera?.Name ?? "Unknown Camera");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -103,14 +95,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    // Notify on Add events for all types, and also on Update events for ring events
-    // that have no End timestamp yet (ring is starting, not ending). The integration
-    // API at /proxy/protect/integration emits ring events as Update, not Add.
-    private static bool IsNotifiableEvent(ProtectEvent @event) =>
-        @event.UpdateType == ProtectEventUpdateType.Add || @event is RingEvent { End: null };
-
     [RelayCommand]
     public void LeftClick() => _mainWindow.BringToFront();
+
+    [RelayCommand]
+    public void Exit() => _mainWindow.ExitApplication();
 
     public void Dispose()
     {

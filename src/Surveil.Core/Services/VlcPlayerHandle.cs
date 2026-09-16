@@ -11,7 +11,6 @@ namespace Surveil.Services;
 [ExcludeFromCodeCoverage]
 internal sealed class VlcPlayerHandle : IVlcPlayerHandle
 {
-    private readonly LibVLC _libVlc;
     private readonly MediaPlayer _mediaPlayer;
     private readonly Media _media;
 
@@ -32,17 +31,9 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
     public event EventHandler? EndReached;
     public event EventHandler<VideoFrame>? FrameReady;
 
-    public VlcPlayerHandle(string url, Action<string> onError)
+    public VlcPlayerHandle(LibVLC libVlc, string url, Action<string> onError)
     {
-        _libVlc = new LibVLC(enableDebugLogs: false);
-
-        _libVlc.Log += (_, args) =>
-        {
-            if (args.Level == LogLevel.Error)
-                Debug.WriteLine($"[VLC Error] {args.FormattedLog}");
-        };
-
-        _libVlc.SetDialogHandlers(
+        libVlc.SetDialogHandlers(
             error: (title, text) =>
             {
                 onError(text ?? title ?? "Unknown error");
@@ -64,7 +55,7 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
                 Task.CompletedTask
         );
 
-        _media = new Media(_libVlc, new Uri(url));
+        _media = new Media(libVlc, new Uri(url));
         _media.AddOption(":rtsp-tcp");
         _media.AddOption(":live-caching=300");
         _media.AddOption(":network-caching=1000");
@@ -155,6 +146,5 @@ internal sealed class VlcPlayerHandle : IVlcPlayerHandle
         _mediaPlayer.Dispose();
         _media.Dispose();
         ReleaseBuffer();
-        _libVlc.Dispose();
     }
 }

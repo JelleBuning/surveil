@@ -6,11 +6,10 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Domain.Cameras;
 
-namespace Surveil.Infrastructure.Http;
+namespace Surveil.Unifi;
 
 public sealed class UnifiProtectApiClient : ICameraProvider
 {
@@ -148,11 +147,13 @@ public sealed class UnifiProtectApiClient : ICameraProvider
         string? Package)
     {
         /// <summary>Returns the best available stream URL and its quality label, or null if none.</summary>
-        public (string Url, string Quality)? BestStream() =>
-            High   is not null ? (High,   "high")   :
-            Medium is not null ? (Medium, "medium") :
-            Low    is not null ? (Low,    "low")    :
-            Package is not null ? (Package, "package") :
-            null;
+        public (string Url, string Quality)? BestStream()
+        {
+            if (High    is not null) return (High,    "high");
+            if (Medium  is not null) return (Medium,  "medium");
+            if (Low     is not null) return (Low,     "low");
+            if (Package is not null) return (Package, "package");
+            return null;
+        }
     }
 }

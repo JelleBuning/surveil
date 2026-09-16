@@ -48,6 +48,12 @@
             ToolTipText="Surveil"
             IconSource="/Assets/tray-icon.ico"
             LeftClickCommand="{Binding LeftClickCommand}"
-            x:FieldModifier="public" />
+            x:FieldModifier="public">
+            <notifyIcon:TaskbarIcon.ContextFlyout>
+                <MenuFlyout>
+                    <MenuFlyoutItem x:Name="ExitMenuItem" Text="Exit" />
+                </MenuFlyout>
+            </notifyIcon:TaskbarIcon.ContextFlyout>
+        </notifyIcon:TaskbarIcon>
     </Grid>
 </Window>

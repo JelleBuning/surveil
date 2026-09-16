@@ -1,18 +1,11 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Surveil.Application.Options;
-using Surveil.Domain.Events;
+using Surveil.Unifi;
 
-namespace Surveil.Core.Tests.Application;
+namespace Surveil.Unifi.Tests;
 
 [TestClass]
 public sealed class UnifiProtectOptionsTests
 {
-    [TestMethod]
-    public void SectionName_IsUnifiProtect()
-    {
-        Assert.AreEqual("UnifiProtect", UnifiProtectOptions.SectionName);
-    }
-
     [TestMethod]
     public void Options_Properties_AreSetViaInitializer()
     {
@@ -30,12 +23,6 @@ public sealed class UnifiProtectOptionsTests
 [TestClass]
 public sealed class EventNotificationSettingsTests
 {
-    [TestMethod]
-    public void SectionName_IsEventNotifications()
-    {
-        Assert.AreEqual("EventNotifications", EventNotificationSettings.SectionName);
-    }
-
     [TestMethod]
     public void Defaults_OnlyRingIsTrue()
     {

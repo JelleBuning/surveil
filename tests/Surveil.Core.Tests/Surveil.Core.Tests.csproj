@@ -15,7 +15,6 @@
     <PackageReference Include="MSTest.TestAdapter" />
     <PackageReference Include="GitHubActionsTestLogger" />
     <PackageReference Include="Moq" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
 

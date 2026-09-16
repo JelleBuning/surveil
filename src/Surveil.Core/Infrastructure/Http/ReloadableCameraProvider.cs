@@ -1,28 +1,27 @@
-using Microsoft.Extensions.Options;
-using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Surveil.Application.Options;
 using Surveil.Application.Ports;
 using Surveil.Application.Settings;
 using Surveil.Domain.Cameras;
 
 namespace Surveil.Infrastructure.Http;
 
-/// <summary>
-/// Delegates to whichever ICameraProvider matches the current settings, swapping it
-/// live when settings are saved — so callers never need the app restarted to pick up
-/// a changed provider, base URL, or API key.
-/// </summary>
 public sealed class ReloadableCameraProvider : ICameraProvider
 {
     private readonly object _lock = new();
+    private readonly IReadOnlyList<ICameraProviderFactory> _factories;
     private ICameraProvider _current;
 
-    public ReloadableCameraProvider(AppSettings initialSettings, ISettingsChangeNotifier notifier)
+    public ReloadableCameraProvider(
+        AppSettings initialSettings,
+        ISettingsChangeNotifier notifier,
+        IEnumerable<ICameraProviderFactory> factories)
     {
+        _factories = factories.ToList();
         _current = Build(initialSettings);
+
         notifier.SettingsChanged += settings =>
         {
             lock (_lock)
@@ -30,16 +29,11 @@ public sealed class ReloadableCameraProvider : ICameraProvider
         };
     }
 
-    private static ICameraProvider Build(AppSettings settings) =>
-        settings.SelectedProvider is VideoProviderType.UnifiProtect &&
-        Uri.IsWellFormedUriString(settings.UnifiProtect.BaseUrl, UriKind.Absolute)
-            ? new UnifiProtectApiClient(Options.Create(new UnifiProtectOptions
-            {
-                BaseUrl      = settings.UnifiProtect.BaseUrl,
-                ApiKey       = settings.UnifiProtect.ApiKey,
-                SnapshotPath = settings.UnifiProtect.SnapshotPath
-            }))
-            : new NoOpCameraProvider();
+    private ICameraProvider Build(AppSettings settings)
+    {
+        var factory = _factories.FirstOrDefault(f => f.ProviderType == settings.SelectedProvider);
+        return factory?.Create(settings) ?? new NoOpCameraProvider();
+    }
 
     private ICameraProvider Current
     {
